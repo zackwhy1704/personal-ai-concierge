@@ -131,7 +131,6 @@ export default function UsagePage() {
                   <Row label="Current Period Ends" value={
                     <span>{new Date(subscription.current_period_end).toLocaleDateString()}</span>
                   } />
-                )}
                 ) : null}
                 {subscription.cancel_at_period_end ? (
                   <Row label="Cancellation" value={
