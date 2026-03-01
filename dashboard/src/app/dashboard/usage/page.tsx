@@ -3,6 +3,26 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 
+interface Subscription {
+  has_subscription: boolean
+  plan: string
+  status: string
+  current_period_end?: string | null
+  cancel_at_period_end: boolean
+}
+
+interface Usage {
+  total_conversations: number
+  total_messages: number
+  total_tokens: number
+  total_cost: number
+  plan: string
+  included_conversations: number
+  remaining_conversations: number
+  overage_conversations: number
+  overage_cost: number
+}
+
 const PLANS = [
   { id: 'starter', name: 'Starter', price: 99, conversations: 500 },
   { id: 'professional', name: 'Professional', price: 299, conversations: 2000 },
@@ -10,8 +30,8 @@ const PLANS = [
 ]
 
 export default function UsagePage() {
-  const [usage, setUsage] = useState<Record<string, unknown> | null>(null)
-  const [subscription, setSubscription] = useState<Record<string, unknown> | null>(null)
+  const [usage, setUsage] = useState<Usage | null>(null)
+  const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const searchParams = useSearchParams()
@@ -25,8 +45,8 @@ export default function UsagePage() {
         api.getMonthlyUsage(),
         api.getSubscriptionStatus(),
       ])
-      setUsage(u as Record<string, unknown>)
-      setSubscription(s as Record<string, unknown>)
+      setUsage(u as Usage)
+      setSubscription(s as Subscription)
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
@@ -103,20 +123,21 @@ export default function UsagePage() {
                     subscription.status === 'canceled' || subscription.status === 'none' ? 'bg-red-100 text-red-700' :
                     'bg-gray-100 text-gray-700'
                   }`}>
-                    {String(subscription.status).toUpperCase()}
+                    {subscription.status.toUpperCase()}
                   </span>
                 } />
-                <Row label="Plan" value={<span className="capitalize">{String(subscription.plan)}</span>} />
-                {subscription.current_period_end && (
+                <Row label="Plan" value={<span className="capitalize">{subscription.plan}</span>} />
+                {subscription.current_period_end ? (
                   <Row label="Current Period Ends" value={
-                    <span>{new Date(String(subscription.current_period_end)).toLocaleDateString()}</span>
+                    <span>{new Date(subscription.current_period_end).toLocaleDateString()}</span>
                   } />
                 )}
-                {subscription.cancel_at_period_end && (
+                ) : null}
+                {subscription.cancel_at_period_end ? (
                   <Row label="Cancellation" value={
                     <span className="text-orange-600">Will cancel at end of period</span>
                   } />
-                )}
+                ) : null}
               </div>
             </div>
             <div className="flex gap-2">
@@ -163,19 +184,19 @@ export default function UsagePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <Card label="Conversations" value={String(usage.total_conversations)} />
             <Card label="Messages" value={String(usage.total_messages)} />
-            <Card label="Tokens Used" value={Number(usage.total_tokens).toLocaleString()} />
-            <Card label="Est. Cost" value={`$${Number(usage.total_cost).toFixed(2)}`} />
+            <Card label="Tokens Used" value={usage.total_tokens.toLocaleString()} />
+            <Card label="Est. Cost" value={`$${usage.total_cost.toFixed(2)}`} />
           </div>
 
           <div className="p-6 bg-white rounded-xl shadow-sm border mb-6">
             <h3 className="font-semibold text-gray-700 mb-4">Plan Details</h3>
             <div className="space-y-2 text-sm">
-              <Row label="Current Plan" value={<span>{String(usage.plan).toUpperCase()}</span>} />
-              <Row label="Included Conversations" value={<span>{String(usage.included_conversations)}</span>} />
-              <Row label="Used" value={<span>{String(usage.total_conversations)}</span>} />
-              <Row label="Remaining" value={<span>{String(usage.remaining_conversations)}</span>} />
-              <Row label="Overage Conversations" value={<span>{String(usage.overage_conversations)}</span>} />
-              <Row label="Overage Cost" value={<span>${String(usage.overage_cost)}</span>} />
+              <Row label="Current Plan" value={<span>{usage.plan.toUpperCase()}</span>} />
+              <Row label="Included Conversations" value={<span>{usage.included_conversations}</span>} />
+              <Row label="Used" value={<span>{usage.total_conversations}</span>} />
+              <Row label="Remaining" value={<span>{usage.remaining_conversations}</span>} />
+              <Row label="Overage Conversations" value={<span>{usage.overage_conversations}</span>} />
+              <Row label="Overage Cost" value={<span>${usage.overage_cost}</span>} />
             </div>
           </div>
 
@@ -184,17 +205,17 @@ export default function UsagePage() {
             <div className="w-full bg-gray-200 rounded-full h-4">
               <div
                 className={`h-4 rounded-full transition-all ${
-                  Number(usage.total_conversations) > Number(usage.included_conversations)
+                  usage.total_conversations > usage.included_conversations
                     ? 'bg-red-500' : 'bg-blue-600'
                 }`}
                 style={{
-                  width: `${Math.min(100, (Number(usage.total_conversations) / Number(usage.included_conversations)) * 100)}%`,
+                  width: `${Math.min(100, (usage.total_conversations / usage.included_conversations) * 100)}%`,
                 }}
               />
             </div>
             <p className="text-xs text-gray-500 mt-2">
               {usage.total_conversations} / {usage.included_conversations} conversations used
-              {Number(usage.total_conversations) > Number(usage.included_conversations) &&
+              {usage.total_conversations > usage.included_conversations &&
                 <span className="text-red-500 ml-2">(Overage!)</span>
               }
             </p>
