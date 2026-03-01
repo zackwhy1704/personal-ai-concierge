@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 
@@ -30,6 +30,14 @@ const PLANS = [
 ]
 
 export default function UsagePage() {
+  return (
+    <Suspense fallback={<div className="text-gray-500">Loading...</div>}>
+      <UsageContent />
+    </Suspense>
+  )
+}
+
+function UsageContent() {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
