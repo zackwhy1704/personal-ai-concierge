@@ -21,13 +21,19 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Personal AI Concierge...")
-    await init_db()
-    logger.info("Database initialized")
+    try:
+        await init_db()
+        logger.info("Database initialized")
+    except Exception:
+        logger.exception("Database init failed - will retry on first request")
 
-    vector_store = VectorStoreService()
-    await vector_store.initialize_collections()
-    await vector_store.close()
-    logger.info("Vector store collections initialized")
+    try:
+        vector_store = VectorStoreService()
+        await vector_store.initialize_collections()
+        await vector_store.close()
+        logger.info("Vector store collections initialized")
+    except Exception:
+        logger.exception("Vector store init failed - will retry on first request")
 
     yield
 
