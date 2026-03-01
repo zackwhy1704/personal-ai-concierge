@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.db.database import init_db
 from app.services.vector_store import VectorStoreService
-from app.api import webhooks, tenants, guardrails, usage, intents, knowledge
+from app.api import webhooks, tenants, guardrails, usage, intents, knowledge, billing
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,6 +57,7 @@ app.include_router(guardrails.router)
 app.include_router(usage.router)
 app.include_router(intents.router)
 app.include_router(knowledge.router)
+app.include_router(billing.router)
 
 
 @app.get("/health")

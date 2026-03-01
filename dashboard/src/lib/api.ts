@@ -121,6 +121,30 @@ class ApiClient {
       method: 'POST', body: JSON.stringify({ query }),
     });
   }
+
+  // Billing
+  async getSubscriptionStatus() {
+    return this.request('/api/billing/subscription');
+  }
+
+  async createCheckout(plan: string) {
+    return this.request<{ checkout_url: string; session_id: string }>('/api/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({
+        plan,
+        success_url: `${window.location.origin}/dashboard/usage?payment=success`,
+        cancel_url: `${window.location.origin}/dashboard/usage?payment=cancelled`,
+      }),
+    });
+  }
+
+  async cancelSubscription() {
+    return this.request('/api/billing/cancel', { method: 'POST' });
+  }
+
+  async reactivateSubscription() {
+    return this.request('/api/billing/reactivate', { method: 'POST' });
+  }
 }
 
 export const api = new ApiClient();
