@@ -72,6 +72,7 @@ async def _process_message(message: dict):
             phone_number_id = message["phone_number_id"]
             sender_phone = message["from"]
             text = message.get("text", "")
+            logger.info(f"[PIPELINE] START processing message from {sender_phone}: {text[:50]}")
 
             # Find tenant by WhatsApp phone number ID
             result = await db.execute(
@@ -82,13 +83,18 @@ async def _process_message(message: dict):
             )
             tenant = result.scalar_one_or_none()
             if not tenant:
-                logger.warning(f"No active tenant for phone_number_id: {phone_number_id}")
+                logger.warning(f"[PIPELINE] No active tenant for phone_number_id: {phone_number_id}")
                 return
+            logger.info(f"[PIPELINE] Found tenant: {tenant.name} (id={tenant.id})")
 
             # Mark as read
-            await whatsapp_service.mark_as_read(
-                phone_number_id, tenant.whatsapp_access_token, message["message_id"]
-            )
+            try:
+                await whatsapp_service.mark_as_read(
+                    phone_number_id, tenant.whatsapp_access_token, message["message_id"]
+                )
+                logger.info("[PIPELINE] Marked message as read")
+            except Exception as e:
+                logger.error(f"[PIPELINE] Failed to mark as read: {e}")
 
             # Check if this is an admin command
             if sender_phone in (tenant.get_admin_phones()):
@@ -98,10 +104,12 @@ async def _process_message(message: dict):
                         phone_number_id, tenant.whatsapp_access_token,
                         sender_phone, admin_response,
                     )
+                    logger.info("[PIPELINE] Handled admin command, done")
                     return
 
             # Get or create conversation session
             session_id = _get_session_id(str(tenant.id), sender_phone)
+            logger.info(f"[PIPELINE] Session ID: {session_id[:16]}...")
 
             # Get active guardrail config
             result = await db.execute(
@@ -114,6 +122,9 @@ async def _process_message(message: dict):
             guardrail_config = None
             if guardrail_record:
                 guardrail_config = GuardrailService.parse_yaml(guardrail_record.config_yaml)
+                logger.info("[PIPELINE] Loaded guardrail config")
+            else:
+                logger.info("[PIPELINE] No active guardrail config")
 
             # Check for escalation triggers
             if guardrail_config:
@@ -126,32 +137,39 @@ async def _process_message(message: dict):
                         f"I'm connecting you with a team member who can help. "
                         f"Please reach out to: {contact}",
                     )
+                    logger.info("[PIPELINE] Escalation triggered, done")
                     return
 
             # Initialize services
+            logger.info("[PIPELINE] Initializing services (VectorStore, LLM, Memory)...")
             vector_store = VectorStoreService()
             llm = LLMService()
             memory = MemoryService()
             guardrail_svc = GuardrailService()
+            logger.info("[PIPELINE] Services initialized")
 
             try:
                 rag = RAGService(vector_store, llm, memory, guardrail_svc)
 
                 # Process through RAG pipeline
+                logger.info("[PIPELINE] Starting RAG pipeline...")
                 result = await rag.process_message(
                     tenant_id=str(tenant.id),
                     session_id=session_id,
                     user_message=text,
                     guardrail_config=guardrail_config,
                 )
+                logger.info(f"[PIPELINE] RAG complete. Response length: {len(result['response'])}, tokens: {result['tokens_used']}")
 
                 response_text = result["response"]
 
                 # Send response
-                await whatsapp_service.send_text_message(
+                logger.info(f"[PIPELINE] Sending WhatsApp reply to {sender_phone}...")
+                send_result = await whatsapp_service.send_text_message(
                     phone_number_id, tenant.whatsapp_access_token,
                     sender_phone, response_text,
                 )
+                logger.info(f"[PIPELINE] WhatsApp reply sent: {send_result}")
 
                 # Record usage
                 await BillingService.record_usage(
@@ -160,6 +178,7 @@ async def _process_message(message: dict):
                     messages=1,
                     tokens=result["tokens_used"],
                 )
+                logger.info("[PIPELINE] Usage recorded")
 
                 # Upsert conversation record
                 await _upsert_conversation(
@@ -170,13 +189,14 @@ async def _process_message(message: dict):
                 )
 
                 await db.commit()
+                logger.info("[PIPELINE] Conversation saved & committed. DONE.")
 
             finally:
                 await vector_store.close()
                 await memory.close()
 
     except Exception:
-        logger.exception("Error processing WhatsApp message")
+        logger.exception("[PIPELINE] ERROR processing WhatsApp message")
 
 
 async def _handle_admin_command(text: str, tenant: Tenant, db: AsyncSession) -> str | None:

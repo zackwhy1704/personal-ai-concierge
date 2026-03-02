@@ -108,8 +108,19 @@ async def service_health_check():
     except Exception as e:
         results["database"] = {"status": "error", "error": str(e)}
 
+    # Check Redis
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.ping()
+        results["redis"] = {"status": "connected", "url_prefix": settings.redis_url[:20] + "..."}
+        await r.aclose()
+    except Exception as e:
+        results["redis"] = {"status": "error", "error": str(e), "url_prefix": settings.redis_url[:20] + "..." if settings.redis_url else "NOT_SET"}
+
     # Check other keys
     results["anthropic_key_set"] = bool(settings.anthropic_api_key)
     results["whatsapp_verify_token"] = settings.whatsapp_verify_token[:10] + "..." if settings.whatsapp_verify_token else "NOT_SET"
+    results["whatsapp_app_secret_set"] = bool(settings.whatsapp_app_secret)
 
     return results
