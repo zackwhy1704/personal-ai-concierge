@@ -177,6 +177,48 @@ async def list_tenants(
     ]
 
 
+@router.patch("/{tenant_id}", response_model=TenantResponse)
+async def admin_update_tenant(
+    tenant_id: str,
+    data: TenantUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: bool = Depends(verify_admin),
+):
+    """Update any tenant by ID (admin only)."""
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if data.name is not None:
+        tenant.name = data.name
+    if data.plan is not None:
+        tenant.plan = data.plan
+    if data.status is not None:
+        tenant.status = data.status
+    if data.whatsapp_phone_number_id is not None:
+        tenant.whatsapp_phone_number_id = data.whatsapp_phone_number_id
+    if data.whatsapp_business_account_id is not None:
+        tenant.whatsapp_business_account_id = data.whatsapp_business_account_id
+    if data.whatsapp_access_token is not None:
+        tenant.whatsapp_access_token = data.whatsapp_access_token
+    if data.admin_phone_numbers is not None:
+        tenant.admin_phone_numbers = data.admin_phone_numbers
+
+    tenant.updated_at = datetime.utcnow()
+    await db.flush()
+
+    return TenantResponse(
+        id=str(tenant.id),
+        name=tenant.name,
+        slug=tenant.slug,
+        plan=tenant.plan.value,
+        status=tenant.status.value,
+        whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
+        created_at=tenant.created_at.isoformat(),
+    )
+
+
 @router.post("/me/activate")
 async def activate_tenant(
     tenant: Tenant = Depends(get_current_tenant),
