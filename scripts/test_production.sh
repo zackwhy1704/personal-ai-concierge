@@ -77,17 +77,17 @@ echo "=== Guardrails ==="
 GR_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API_URL/api/guardrails/from-form" \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "business_name":"E2E Test Hotel",
-    "business_type":"hotel",
-    "ai_name":"TestBot",
-    "tone":"friendly",
-    "greeting":"Hello! How can I help?",
-    "allowed_topics":["bookings","amenities"],
-    "blocked_topics":["politics"],
-    "max_response_length":500,
-    "escalation_triggers":["speak to manager"]
-  }')
+  -d "{
+    \"tenant_name\":\"E2E Test Hotel\",
+    \"language\":[\"en\"],
+    \"persona\":{\"name\":\"TestBot\",\"tone\":\"friendly\",\"greeting\":\"Hello! How can I help?\"},
+    \"allowed_topics\":[\"bookings\",\"amenities\"],
+    \"blocked_topics\":[\"politics\"],
+    \"escalation_rules\":[{\"trigger\":\"speak to manager\",\"action\":\"escalate\"}],
+    \"response_limits\":{\"max_response_length\":500,\"max_conversation_turns\":50,\"session_timeout_minutes\":30},
+    \"data_handling\":{\"collect_personal_data\":false,\"store_conversation_history\":true,\"retention_days\":90},
+    \"custom_rules\":[]
+  }")
 if [ "$GR_STATUS" = "200" ]; then
   green "Guardrail created from form"
 else

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 from functools import lru_cache
 
 
@@ -56,6 +57,15 @@ class Settings(BaseSettings):
     session_summary_threshold: int = 15
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @model_validator(mode="after")
+    def strip_string_values(self):
+        """Strip trailing whitespace/newlines from all string env vars."""
+        for field_name in self.model_fields:
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                object.__setattr__(self, field_name, value.strip())
+        return self
 
 
 @lru_cache
