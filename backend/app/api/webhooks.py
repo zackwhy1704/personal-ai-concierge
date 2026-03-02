@@ -450,7 +450,7 @@ async def test_pipeline(request: Request):
                     "tokens_used": result["tokens_used"],
                     "intent": result.get("intent"),
                     "sources": result.get("sources", []),
-                    "has_upsell": bool(result.get("upsell_context", {}).get("should_upsell")),
+                    "has_upsell": bool((result.get("upsell_context") or {}).get("should_upsell")),
                 }
 
                 await db.commit()
