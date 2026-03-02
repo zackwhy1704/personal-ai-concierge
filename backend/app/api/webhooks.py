@@ -188,32 +188,35 @@ async def _process_message(message: dict):
 
                 # Send response — use interactive buttons if upsell context has products
                 logger.info(f"[PIPELINE] Sending WhatsApp reply to {sender_phone}...")
-                if (upsell_context
-                        and upsell_context.get("should_upsell")
-                        and upsell_context.get("recommended_products")
-                        and upsell_context.get("attempt_ids")):
-                    product = upsell_context["recommended_products"][0]
-                    attempt_id = upsell_context["attempt_ids"][0]
-                    if product.get("action_url"):
-                        buttons = [
-                            {"id": f"upsell_{attempt_id}_interested", "title": "Tell me more"},
-                            {"id": f"upsell_{attempt_id}_no_thanks", "title": "No thanks"},
-                        ]
-                        send_result = await whatsapp_service.send_interactive_buttons(
-                            phone_number_id, tenant.whatsapp_access_token,
-                            sender_phone, response_text, buttons,
-                        )
+                try:
+                    if (upsell_context
+                            and upsell_context.get("should_upsell")
+                            and upsell_context.get("recommended_products")
+                            and upsell_context.get("attempt_ids")):
+                        product = upsell_context["recommended_products"][0]
+                        attempt_id = upsell_context["attempt_ids"][0]
+                        if product.get("action_url"):
+                            buttons = [
+                                {"id": f"upsell_{attempt_id}_interested", "title": "Tell me more"},
+                                {"id": f"upsell_{attempt_id}_no_thanks", "title": "No thanks"},
+                            ]
+                            send_result = await whatsapp_service.send_interactive_buttons(
+                                phone_number_id, tenant.whatsapp_access_token,
+                                sender_phone, response_text, buttons,
+                            )
+                        else:
+                            send_result = await whatsapp_service.send_text_message(
+                                phone_number_id, tenant.whatsapp_access_token,
+                                sender_phone, response_text,
+                            )
                     else:
                         send_result = await whatsapp_service.send_text_message(
                             phone_number_id, tenant.whatsapp_access_token,
                             sender_phone, response_text,
                         )
-                else:
-                    send_result = await whatsapp_service.send_text_message(
-                        phone_number_id, tenant.whatsapp_access_token,
-                        sender_phone, response_text,
-                    )
-                logger.info(f"[PIPELINE] WhatsApp reply sent: {send_result}")
+                    logger.info(f"[PIPELINE] WhatsApp reply sent: {send_result}")
+                except Exception:
+                    logger.exception(f"[PIPELINE] FAILED to send WhatsApp reply to {sender_phone}")
 
                 # Update upsell attempt with conversation_id and guest_phone
                 if upsell_context and upsell_context.get("attempt_ids"):
@@ -375,3 +378,90 @@ def _plan_price(plan) -> str:
     from app.models.tenant import PlanType
     prices = {PlanType.STARTER: "99", PlanType.PROFESSIONAL: "299", PlanType.ENTERPRISE: "799"}
     return prices.get(plan, "?")
+
+
+@router.post("/test-pipeline")
+async def test_pipeline(request: Request):
+    """Diagnostic endpoint: test the full RAG pipeline without WhatsApp.
+    Requires X-Admin-Key header. Returns the pipeline result or error details.
+    """
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+    body = await request.json()
+    tenant_id = body.get("tenant_id")
+    message = body.get("message", "Hello")
+    session_id = body.get("session_id", "test-pipeline-session")
+
+    steps = {}
+
+    # Step 1: Find tenant
+    try:
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(Tenant).where(Tenant.id == tenant_id)
+            )
+            tenant = result.scalar_one_or_none()
+            if not tenant:
+                return {"error": f"Tenant {tenant_id} not found", "steps": steps}
+            steps["tenant"] = {"name": tenant.name, "status": tenant.status.value}
+
+            # Step 2: Load guardrails
+            result = await db.execute(
+                select(GuardrailConfig).where(
+                    GuardrailConfig.tenant_id == tenant.id,
+                    GuardrailConfig.is_active.is_(True),
+                )
+            )
+            guardrail_record = result.scalar_one_or_none()
+            guardrail_config = None
+            if guardrail_record:
+                guardrail_config = GuardrailService.parse_yaml(guardrail_record.config_yaml)
+                steps["guardrails"] = "loaded"
+            else:
+                steps["guardrails"] = "none"
+
+            # Step 3: Initialize services
+            vector_store = VectorStoreService()
+            llm = LLMService()
+            memory = MemoryService()
+            guardrail_svc = GuardrailService()
+            sales_svc = SalesService(vector_store, memory) if settings.sales_enabled else None
+            steps["services"] = "initialized"
+
+            try:
+                # Step 4: RAG pipeline
+                rag = RAGService(vector_store, llm, memory, guardrail_svc, sales=sales_svc)
+                result = await rag.process_message(
+                    tenant_id=str(tenant.id),
+                    session_id=session_id,
+                    user_message=message,
+                    guardrail_config=guardrail_config,
+                    db=db,
+                )
+                steps["rag"] = {
+                    "response_length": len(result["response"]),
+                    "tokens_used": result["tokens_used"],
+                    "intent": result.get("intent"),
+                    "sources": result.get("sources", []),
+                    "has_upsell": bool(result.get("upsell_context", {}).get("should_upsell")),
+                }
+
+                await db.commit()
+                steps["db_commit"] = "success"
+
+                return {
+                    "status": "success",
+                    "response": result["response"][:500],
+                    "steps": steps,
+                }
+            finally:
+                await vector_store.close()
+                await memory.close()
+
+    except Exception as e:
+        import traceback
+        steps["error"] = str(e)
+        steps["traceback"] = traceback.format_exc()
+        return {"status": "error", "steps": steps}
