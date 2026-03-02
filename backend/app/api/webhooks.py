@@ -51,6 +51,11 @@ async def handle_whatsapp_webhook(request: Request):
     # Verify signature
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not whatsapp_service.verify_webhook_signature(body, signature):
+        logger.warning(
+            f"Webhook signature verification failed. "
+            f"Signature header present: {bool(signature)}, "
+            f"Signature prefix: {signature[:20] if signature else 'EMPTY'}"
+        )
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     payload = await request.json()
