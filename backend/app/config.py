@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     session_timeout_minutes: int = 30
     session_summary_threshold: int = 15
 
+    # Sales/Upsell
+    sales_enabled: bool = True
+    sales_max_upsells_per_session: int = 2
+    sales_product_match_threshold: float = 0.35
+    sales_product_match_top_k: int = 3
+    sales_interest_keywords: str = "tell me more,sounds good,how much,book it,yes please,interested,sign me up"
+    sales_learning_min_attempts: int = 30
+    sales_ab_test_min_samples: int = 100
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @model_validator(mode="after")

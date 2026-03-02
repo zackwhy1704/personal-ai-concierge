@@ -20,6 +20,8 @@ from app.services.llm import LLMService
 from app.services.memory import MemoryService
 from app.services.guardrail import GuardrailService
 from app.services.billing import BillingService
+from app.services.sales import SalesService
+from app.models.upsell import UpsellOutcome
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -140,16 +142,35 @@ async def _process_message(message: dict):
                     logger.info("[PIPELINE] Escalation triggered, done")
                     return
 
+            # Handle upsell button responses
+            if message.get("button_id") and message["button_id"].startswith("upsell_"):
+                parts = message["button_id"].split("_", 2)
+                if len(parts) >= 3:
+                    attempt_id = parts[1]
+                    action = parts[2]
+                    memory_for_tracking = MemoryService()
+                    sales_for_tracking = SalesService(VectorStoreService(), memory_for_tracking)
+                    try:
+                        outcome = (
+                            UpsellOutcome.CLICKED if action == "interested"
+                            else UpsellOutcome.DISMISSED
+                        )
+                        await sales_for_tracking.track_outcome(attempt_id, outcome, db)
+                        await db.commit()
+                    finally:
+                        await memory_for_tracking.close()
+
             # Initialize services
-            logger.info("[PIPELINE] Initializing services (VectorStore, LLM, Memory)...")
+            logger.info("[PIPELINE] Initializing services (VectorStore, LLM, Memory, Sales)...")
             vector_store = VectorStoreService()
             llm = LLMService()
             memory = MemoryService()
             guardrail_svc = GuardrailService()
+            sales_svc = SalesService(vector_store, memory) if settings.sales_enabled else None
             logger.info("[PIPELINE] Services initialized")
 
             try:
-                rag = RAGService(vector_store, llm, memory, guardrail_svc)
+                rag = RAGService(vector_store, llm, memory, guardrail_svc, sales=sales_svc)
 
                 # Process through RAG pipeline
                 logger.info("[PIPELINE] Starting RAG pipeline...")
@@ -158,18 +179,52 @@ async def _process_message(message: dict):
                     session_id=session_id,
                     user_message=text,
                     guardrail_config=guardrail_config,
+                    db=db,
                 )
                 logger.info(f"[PIPELINE] RAG complete. Response length: {len(result['response'])}, tokens: {result['tokens_used']}")
 
                 response_text = result["response"]
+                upsell_context = result.get("upsell_context")
 
-                # Send response
+                # Send response — use interactive buttons if upsell context has products
                 logger.info(f"[PIPELINE] Sending WhatsApp reply to {sender_phone}...")
-                send_result = await whatsapp_service.send_text_message(
-                    phone_number_id, tenant.whatsapp_access_token,
-                    sender_phone, response_text,
-                )
+                if (upsell_context
+                        and upsell_context.get("should_upsell")
+                        and upsell_context.get("recommended_products")
+                        and upsell_context.get("attempt_ids")):
+                    product = upsell_context["recommended_products"][0]
+                    attempt_id = upsell_context["attempt_ids"][0]
+                    if product.get("action_url"):
+                        buttons = [
+                            {"id": f"upsell_{attempt_id}_interested", "title": "Tell me more"},
+                            {"id": f"upsell_{attempt_id}_no_thanks", "title": "No thanks"},
+                        ]
+                        send_result = await whatsapp_service.send_interactive_buttons(
+                            phone_number_id, tenant.whatsapp_access_token,
+                            sender_phone, response_text, buttons,
+                        )
+                    else:
+                        send_result = await whatsapp_service.send_text_message(
+                            phone_number_id, tenant.whatsapp_access_token,
+                            sender_phone, response_text,
+                        )
+                else:
+                    send_result = await whatsapp_service.send_text_message(
+                        phone_number_id, tenant.whatsapp_access_token,
+                        sender_phone, response_text,
+                    )
                 logger.info(f"[PIPELINE] WhatsApp reply sent: {send_result}")
+
+                # Update upsell attempt with conversation_id and guest_phone
+                if upsell_context and upsell_context.get("attempt_ids"):
+                    from app.models.upsell import UpsellAttempt
+                    for aid in upsell_context["attempt_ids"]:
+                        attempt_result = await db.execute(
+                            select(UpsellAttempt).where(UpsellAttempt.id == aid)
+                        )
+                        attempt = attempt_result.scalar_one_or_none()
+                        if attempt:
+                            attempt.guest_phone = sender_phone
 
                 # Record usage
                 await BillingService.record_usage(
@@ -187,6 +242,21 @@ async def _process_message(message: dict):
                     result.get("intent", {}).get("intent_name") if result.get("intent") else None,
                     result["tokens_used"],
                 )
+
+                # Link upsell attempts to the conversation
+                if upsell_context and upsell_context.get("attempt_ids"):
+                    conv_result = await db.execute(
+                        select(Conversation).where(Conversation.session_id == session_id)
+                    )
+                    conv = conv_result.scalar_one_or_none()
+                    if conv:
+                        for aid in upsell_context["attempt_ids"]:
+                            attempt_result = await db.execute(
+                                select(UpsellAttempt).where(UpsellAttempt.id == aid)
+                            )
+                            attempt = attempt_result.scalar_one_or_none()
+                            if attempt:
+                                attempt.conversation_id = conv.id
 
                 await db.commit()
                 logger.info("[PIPELINE] Conversation saved & committed. DONE.")

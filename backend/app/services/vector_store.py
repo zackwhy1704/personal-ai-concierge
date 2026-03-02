@@ -21,6 +21,7 @@ settings = get_settings()
 
 KNOWLEDGE_COLLECTION = "knowledge_base"
 INTENT_COLLECTION = "intent_examples"
+PRODUCT_COLLECTION = "product_catalog"
 
 
 class VectorStoreService:
@@ -38,7 +39,7 @@ class VectorStoreService:
 
     async def initialize_collections(self):
         """Create collections if they don't exist."""
-        for collection_name in [KNOWLEDGE_COLLECTION, INTENT_COLLECTION]:
+        for collection_name in [KNOWLEDGE_COLLECTION, INTENT_COLLECTION, PRODUCT_COLLECTION]:
             collections = await self.client.get_collections()
             existing = [c.name for c in collections.collections]
             if collection_name not in existing:
@@ -239,7 +240,7 @@ class VectorStoreService:
 
     async def delete_tenant_data(self, tenant_id: str):
         """Delete all vectors for a tenant."""
-        for collection_name in [KNOWLEDGE_COLLECTION, INTENT_COLLECTION]:
+        for collection_name in [KNOWLEDGE_COLLECTION, INTENT_COLLECTION, PRODUCT_COLLECTION]:
             await self.client.delete(
                 collection_name=collection_name,
                 points_selector=models.FilterSelector(
@@ -254,6 +255,84 @@ class VectorStoreService:
                 ),
             )
         logger.info(f"Deleted all vector data for tenant {tenant_id}")
+
+    async def upsert_product(
+        self,
+        tenant_id: str,
+        product_id: str,
+        text: str,
+        metadata: dict,
+    ) -> str:
+        """Embed and store a product for semantic matching."""
+        embedding = await self.get_embedding(text)
+        point_id = str(uuid.uuid4())
+        await self.client.upsert(
+            collection_name=PRODUCT_COLLECTION,
+            points=[
+                PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload={
+                        "tenant_id": tenant_id,
+                        "product_id": product_id,
+                        "content": text,
+                        "category": metadata.get("category", ""),
+                        "price": metadata.get("price"),
+                        "name": metadata.get("name", ""),
+                        "tags": metadata.get("tags", []),
+                        "type": "product",
+                    },
+                )
+            ],
+        )
+        logger.info(f"Upserted product {product_id} for tenant {tenant_id}")
+        return point_id
+
+    async def search_products(
+        self,
+        tenant_id: str,
+        query: str,
+        top_k: int = 3,
+        category_filter: Optional[str] = None,
+    ) -> list[dict]:
+        """Search product catalog for relevant products."""
+        query_embedding = await self.get_embedding(query)
+        must_conditions = [
+            FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))
+        ]
+        if category_filter:
+            must_conditions.append(
+                FieldCondition(key="category", match=MatchValue(value=category_filter))
+            )
+
+        results = await self.client.search(
+            collection_name=PRODUCT_COLLECTION,
+            query_vector=query_embedding,
+            query_filter=Filter(must=must_conditions),
+            limit=top_k,
+            score_threshold=settings.sales_product_match_threshold,
+        )
+
+        return [
+            {
+                "product_id": hit.payload["product_id"],
+                "name": hit.payload.get("name", ""),
+                "content": hit.payload["content"],
+                "category": hit.payload.get("category", ""),
+                "price": hit.payload.get("price"),
+                "tags": hit.payload.get("tags", []),
+                "score": hit.score,
+            }
+            for hit in results
+        ]
+
+    async def delete_product_vectors(self, tenant_id: str, point_id: str):
+        """Delete a specific product vector."""
+        await self.client.delete(
+            collection_name=PRODUCT_COLLECTION,
+            points_selector=models.PointIdsList(points=[point_id]),
+        )
+        logger.info(f"Deleted product vector {point_id} for tenant {tenant_id}")
 
     async def close(self):
         await self._embedding_client.aclose()

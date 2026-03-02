@@ -39,6 +39,7 @@ class Conversation(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at")
+    upsell_attempts = relationship("UpsellAttempt", back_populates="conversation", cascade="all, delete-orphan")
 
 
 class Message(Base):

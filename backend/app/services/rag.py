@@ -24,11 +24,13 @@ class RAGService:
         llm: LLMService,
         memory: MemoryService,
         guardrail: GuardrailService,
+        sales=None,
     ):
         self.vector_store = vector_store
         self.llm = llm
         self.memory = memory
         self.guardrail = guardrail
+        self.sales = sales
 
     async def process_message(
         self,
@@ -36,6 +38,7 @@ class RAGService:
         session_id: str,
         user_message: str,
         guardrail_config: Optional[dict] = None,
+        db=None,
     ) -> dict:
         """
         Full RAG pipeline for processing a user message.
@@ -45,6 +48,7 @@ class RAGService:
             "intent": Optional[dict],
             "tokens_used": int,
             "sources": list[str],
+            "upsell_context": Optional[dict],
         }
         """
         # Step 1: Detect intent
@@ -54,6 +58,28 @@ class RAGService:
         knowledge_chunks = await self.vector_store.search_knowledge(
             tenant_id, user_message, top_k=settings.rag_top_k
         )
+
+        # Step 2.5: Sales/upsell context
+        upsell_context = None
+        if self.sales and db:
+            try:
+                # Check if user showed interest in previous upsell
+                pending = await self.sales.get_pending_attempts(session_id)
+                await self.sales.detect_interest_from_response(
+                    user_message, pending, db
+                )
+
+                # Get upsell recommendations
+                upsell_context = await self.sales.get_upsell_context(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    user_message=user_message,
+                    detected_intent=intent,
+                    db=db,
+                )
+            except Exception:
+                logger.exception("Sales upsell context failed, continuing without upsell")
+                upsell_context = None
 
         # Step 3: Get session memory
         session_messages = await self.memory.get_session_messages(session_id)
@@ -65,6 +91,7 @@ class RAGService:
             knowledge_chunks=knowledge_chunks,
             session_summary=session_summary,
             intent=intent,
+            upsell_context=upsell_context,
         )
 
         # Step 5: Build message history for LLM
@@ -101,6 +128,7 @@ class RAGService:
             "intent": intent,
             "tokens_used": llm_response["tokens_used"],
             "sources": sources,
+            "upsell_context": upsell_context,
         }
 
     def _build_system_prompt(
@@ -109,6 +137,7 @@ class RAGService:
         knowledge_chunks: list[dict],
         session_summary: Optional[str],
         intent: Optional[dict],
+        upsell_context: Optional[dict] = None,
     ) -> str:
         parts = []
 
@@ -178,6 +207,10 @@ class RAGService:
                 f"(confidence: {intent['confidence']:.0%}). "
                 f"Consider this when formulating your response."
             )
+
+        # Sales/upsell instructions
+        if upsell_context and upsell_context.get("should_upsell"):
+            parts.append(upsell_context["upsell_prompt_injection"])
 
         parts.append(
             "Always respond in the same language the guest uses. "

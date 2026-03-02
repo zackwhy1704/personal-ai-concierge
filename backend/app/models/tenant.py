@@ -46,6 +46,9 @@ class Tenant(Base):
     usage_records = relationship("UsageRecord", back_populates="tenant", cascade="all, delete-orphan")
     intents = relationship("Intent", back_populates="tenant", cascade="all, delete-orphan")
     knowledge_documents = relationship("KnowledgeDocument", back_populates="tenant", cascade="all, delete-orphan")
+    products = relationship("Product", back_populates="tenant", cascade="all, delete-orphan")
+    upsell_strategies = relationship("UpsellStrategy", back_populates="tenant", cascade="all, delete-orphan")
+    upsell_attempts_rel = relationship("UpsellAttempt", back_populates="tenant", cascade="all, delete-orphan")
 
     def get_admin_phones(self) -> list[str]:
         if not self.admin_phone_numbers:
