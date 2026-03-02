@@ -53,7 +53,7 @@ class UpsellAttempt(Base):
 
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
     tenant_id = Column(GUID, ForeignKey("tenants.id"), nullable=False, index=True)
-    conversation_id = Column(GUID, ForeignKey("conversations.id"), nullable=False, index=True)
+    conversation_id = Column(GUID, ForeignKey("conversations.id"), nullable=True, index=True)
     product_id = Column(GUID, ForeignKey("products.id"), nullable=False, index=True)
     strategy_id = Column(GUID, ForeignKey("upsell_strategies.id"), nullable=True, index=True)
     message_id = Column(GUID, ForeignKey("messages.id"), nullable=True)

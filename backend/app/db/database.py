@@ -37,3 +37,13 @@ async def get_db() -> AsyncSession:
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # One-time fix: make conversation_id nullable in upsell_attempts
+        # (column was created NOT NULL but needs to be nullable since
+        # upsell attempts are created before the conversation record exists)
+        try:
+            from sqlalchemy import text
+            await conn.execute(text(
+                "ALTER TABLE upsell_attempts ALTER COLUMN conversation_id DROP NOT NULL"
+            ))
+        except Exception:
+            pass  # column may already be nullable or table may not exist yet

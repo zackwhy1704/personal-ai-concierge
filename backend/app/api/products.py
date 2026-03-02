@@ -1,4 +1,5 @@
 import logging
+import uuid as _uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -139,6 +140,14 @@ async def list_products(
     return [_product_response(p) for p in products]
 
 
+def _validate_uuid(value: str) -> str:
+    try:
+        _uuid.UUID(value)
+        return value
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(
     product_id: str,
@@ -146,6 +155,7 @@ async def get_product(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single product."""
+    _validate_uuid(product_id)
     result = await db.execute(
         select(Product).where(Product.id == product_id, Product.tenant_id == tenant.id)
     )
