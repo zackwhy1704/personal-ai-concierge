@@ -93,6 +93,9 @@ async def create_intent(
             action_type=data.action_type,
             action_config=data.action_config,
         )
+    except Exception as e:
+        logger.exception("Intent embedding failed")
+        raise HTTPException(status_code=500, detail=f"Embedding/vector store error: {str(e)}")
     finally:
         await vector_store.close()
 
@@ -165,6 +168,9 @@ async def test_intent_detection(
     vector_store = VectorStoreService()
     try:
         result = await vector_store.detect_intent(str(tenant.id), data.message)
+    except Exception as e:
+        logger.exception("Intent detection failed")
+        raise HTTPException(status_code=500, detail=f"Intent detection error: {str(e)}")
     finally:
         await vector_store.close()
 

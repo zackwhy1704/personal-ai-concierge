@@ -112,6 +112,9 @@ async def upload_document(
             db.add(db_chunk)
 
         await db.flush()
+    except Exception as e:
+        logger.exception("Knowledge upload failed")
+        raise HTTPException(status_code=500, detail=f"Embedding/vector store error: {str(e)}")
     finally:
         await vector_store.close()
 
@@ -184,6 +187,9 @@ async def search_knowledge(
             query=data.query,
             top_k=data.top_k,
         )
+    except Exception as e:
+        logger.exception("Knowledge search failed")
+        raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
     finally:
         await vector_store.close()
 
