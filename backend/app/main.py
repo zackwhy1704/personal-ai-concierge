@@ -125,6 +125,12 @@ async def service_health_check():
     # Check other keys
     results["anthropic_key_set"] = bool(settings.anthropic_api_key)
     results["whatsapp_verify_token"] = settings.whatsapp_verify_token[:10] + "..." if settings.whatsapp_verify_token else "NOT_SET"
-    results["whatsapp_app_secret_set"] = bool(settings.whatsapp_app_secret)
+    app_secret = settings.whatsapp_app_secret
+    results["whatsapp_app_secret"] = {
+        "set": bool(app_secret),
+        "length": len(app_secret) if app_secret else 0,
+        "has_whitespace": app_secret != app_secret.strip() if app_secret else False,
+        "prefix": app_secret[:4] + "..." if app_secret and len(app_secret) > 4 else "NOT_SET",
+    }
 
     return results

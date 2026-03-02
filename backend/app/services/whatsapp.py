@@ -148,13 +148,26 @@ class WhatsAppService:
             logger.warning("WhatsApp app secret not configured, skipping signature verification")
             return True
 
+        secret = settings.whatsapp_app_secret
         expected = hmac.new(
-            settings.whatsapp_app_secret.encode(),
+            secret.encode(),
             payload,
             hashlib.sha256,
         ).hexdigest()
 
-        return hmac.compare_digest(f"sha256={expected}", signature)
+        expected_sig = f"sha256={expected}"
+        match = hmac.compare_digest(expected_sig, signature)
+
+        if not match:
+            logger.error(
+                f"Webhook signature mismatch: "
+                f"received_sig_prefix={signature[:20]}..., "
+                f"expected_sig_prefix={expected_sig[:20]}..., "
+                f"secret_len={len(secret)}, "
+                f"payload_len={len(payload)}"
+            )
+
+        return match
 
     @staticmethod
     def extract_message(payload: dict) -> Optional[dict]:
