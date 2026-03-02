@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request, HTTPException, Query, Depends
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +37,7 @@ async def verify_webhook(
     """WhatsApp webhook verification endpoint."""
     if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
         logger.info("WhatsApp webhook verified successfully")
-        return hub_challenge
+        return PlainTextResponse(hub_challenge)
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
