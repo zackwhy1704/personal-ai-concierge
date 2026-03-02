@@ -36,7 +36,7 @@ async def verify_webhook(
     """WhatsApp webhook verification endpoint."""
     if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
         logger.info("WhatsApp webhook verified successfully")
-        return int(hub_challenge)
+        return hub_challenge
     raise HTTPException(status_code=403, detail="Verification failed")
 
 

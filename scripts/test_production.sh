@@ -196,7 +196,7 @@ fi
 # 10. WhatsApp webhook verification
 echo ""
 echo "=== WhatsApp Webhook ==="
-WH_STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=pac_verify_2026_concierge&hub.challenge=test123")
+WH_STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=pac_verify_2026_concierge&hub.challenge=12345")
 if [ "$WH_STATUS" = "200" ]; then
   green "WhatsApp webhook verification works"
 else
