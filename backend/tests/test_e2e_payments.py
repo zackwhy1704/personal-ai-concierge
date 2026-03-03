@@ -367,7 +367,7 @@ async def test_e2e_plan_upgrade_starter_to_enterprise(client, test_tenant):
     msg = mock_notify.call_args[0][1]
     assert "Starter" in msg
     assert "Enterprise" in msg
-    assert "RM6800" in msg
+    assert "RM6,800" in msg
 
 
 # ──────────────────────────────────────────────

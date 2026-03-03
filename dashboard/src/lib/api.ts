@@ -348,6 +348,10 @@ class ApiClient {
     return this.request('/api/billing/reactivate', { method: 'POST' });
   }
 
+  async getPricing(currency: string = 'MYR') {
+    return this.request(`/api/billing/pricing?currency=${currency}`);
+  }
+
   // Products
   async listProducts(category?: string) {
     const params = new URLSearchParams();

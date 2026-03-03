@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     stripe_starter_price_id: str = ""
     stripe_professional_price_id: str = ""
     stripe_enterprise_price_id: str = ""
+    stripe_starter_price_id_sgd: str = ""
+    stripe_professional_price_id_sgd: str = ""
+    stripe_enterprise_price_id_sgd: str = ""
 
     # Admin
     admin_api_key: str = ""

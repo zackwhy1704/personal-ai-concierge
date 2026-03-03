@@ -40,10 +40,18 @@ async def init_db():
         # One-time fix: make conversation_id nullable in upsell_attempts
         # (column was created NOT NULL but needs to be nullable since
         # upsell attempts are created before the conversation record exists)
+        from sqlalchemy import text
         try:
-            from sqlalchemy import text
             await conn.execute(text(
                 "ALTER TABLE upsell_attempts ALTER COLUMN conversation_id DROP NOT NULL"
             ))
         except Exception:
             pass  # column may already be nullable or table may not exist yet
+
+        # Add currency column to tenants (multi-currency support)
+        try:
+            await conn.execute(text(
+                "ALTER TABLE tenants ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'MYR'"
+            ))
+        except Exception:
+            pass  # column already exists

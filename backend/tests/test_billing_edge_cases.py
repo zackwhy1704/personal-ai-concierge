@@ -437,11 +437,7 @@ async def test_checkout_reuses_existing_customer(client, test_tenant):
 @pytest.mark.asyncio
 async def test_checkout_empty_price_id(client):
     """Checkout fails when price_id is not configured (empty string)."""
-    with patch("app.api.billing.settings") as mock_settings:
-        mock_settings.stripe_starter_price_id = ""
-        mock_settings.stripe_professional_price_id = ""
-        mock_settings.stripe_enterprise_price_id = ""
-
+    with patch("app.api.billing.get_stripe_price_id", return_value=""):
         response = await client.post("/api/billing/checkout", json={
             "plan": "starter",
         })
@@ -471,7 +467,7 @@ async def test_checkout_completed_activates_tenant(client, test_tenant, db_sessi
 
         msg = mock_notify.call_args[0][1]
         assert "Enterprise" in msg
-        assert "RM6800" in msg
+        assert "RM6,800" in msg
 
 
 @pytest.mark.asyncio
@@ -522,7 +518,7 @@ async def test_subscription_plan_upgrade(client, test_tenant):
         msg = mock_notify.call_args[0][1]
         assert "Starter" in msg
         assert "Professional" in msg
-        assert "RM2800" in msg
+        assert "RM2,800" in msg
 
 
 @pytest.mark.asyncio
@@ -1017,3 +1013,187 @@ async def test_pause_and_resume_full_cycle(client, test_tenant):
         assert test_tenant.status == TenantStatus.ACTIVE
         msg = mock_notify.call_args[0][1]
         assert "resumed" in msg.lower()
+
+
+# ──────────────────────────────────────────────
+# Multi-Currency Tests (SGD)
+# ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sgd_checkout_notification(client, test_tenant):
+    """SGD tenant checkout notification shows S$ symbol."""
+    test_tenant.currency = "SGD"
+    event = _event("checkout.session.completed", _checkout(str(test_tenant.id), "starter"))
+
+    with patch("app.api.billing.stripe") as mock_stripe, \
+         patch("app.api.billing._notify_admin", new_callable=AsyncMock) as mock_notify, \
+         patch("app.api.billing.async_session_factory") as mock_sf:
+
+        mock_stripe.Webhook.construct_event.return_value = event
+        mock_sf.return_value = _mock_db_session(test_tenant)
+
+        response = await _post_webhook(client, event)
+
+        assert response.status_code == 200
+        msg = mock_notify.call_args[0][1]
+        assert "S$260" in msg
+        assert "Starter" in msg
+
+    test_tenant.currency = "MYR"  # reset
+
+
+@pytest.mark.asyncio
+async def test_sgd_payment_success_notification(client, test_tenant):
+    """SGD tenant payment success shows S$ symbol."""
+    test_tenant.currency = "SGD"
+    event = _event("invoice.payment_succeeded", _invoice(amount_paid=26000))
+
+    with patch("app.api.billing.stripe") as mock_stripe, \
+         patch("app.api.billing._notify_admin", new_callable=AsyncMock) as mock_notify, \
+         patch("app.api.billing.async_session_factory") as mock_sf:
+
+        mock_stripe.Webhook.construct_event.return_value = event
+        mock_sf.return_value = _mock_db_session(test_tenant)
+
+        response = await _post_webhook(client, event)
+
+        assert response.status_code == 200
+        msg = mock_notify.call_args[0][1]
+        assert "S$260.00" in msg
+
+    test_tenant.currency = "MYR"  # reset
+
+
+@pytest.mark.asyncio
+async def test_sgd_payment_failed_notification(client, test_tenant):
+    """SGD tenant payment failure shows S$ symbol."""
+    test_tenant.currency = "SGD"
+    event = _event("invoice.payment_failed", _invoice(
+        amount_due=93000, attempt=4, next_payment_attempt=None
+    ))
+
+    with patch("app.api.billing.stripe") as mock_stripe, \
+         patch("app.api.billing._notify_admin", new_callable=AsyncMock) as mock_notify, \
+         patch("app.api.billing.async_session_factory") as mock_sf:
+
+        mock_stripe.Webhook.construct_event.return_value = event
+        mock_sf.return_value = _mock_db_session(test_tenant)
+
+        response = await _post_webhook(client, event)
+
+        assert response.status_code == 200
+        msg = mock_notify.call_args[0][1]
+        assert "S$930.00" in msg
+
+    test_tenant.currency = "MYR"  # reset
+
+
+@pytest.mark.asyncio
+async def test_sgd_plan_upgrade_notification(client, test_tenant):
+    """SGD tenant plan change notification shows S$ formatted price."""
+    test_tenant.currency = "SGD"
+    test_tenant.stripe_subscription_id = "sub_test_123"
+    test_tenant.plan = PlanType.STARTER
+
+    event = _event("customer.subscription.updated", _subscription(
+        price_id="price_professional_sgd"
+    ))
+
+    with patch("app.api.billing.stripe") as mock_stripe, \
+         patch("app.api.billing._notify_admin", new_callable=AsyncMock) as mock_notify, \
+         patch("app.api.billing.async_session_factory") as mock_sf, \
+         patch("app.api.billing._get_price_to_plan", return_value={
+             "price_professional_sgd": PlanType.PROFESSIONAL,
+         }):
+
+        mock_stripe.Webhook.construct_event.return_value = event
+        mock_sf.return_value = _mock_db_session(test_tenant)
+
+        response = await _post_webhook(client, event)
+
+        assert response.status_code == 200
+        assert test_tenant.plan == PlanType.PROFESSIONAL
+        msg = mock_notify.call_args[0][1]
+        assert "S$930" in msg
+
+    test_tenant.currency = "MYR"  # reset
+
+
+@pytest.mark.asyncio
+async def test_sgd_refund_notification(client, test_tenant):
+    """SGD tenant refund notification shows S$ symbol."""
+    test_tenant.currency = "SGD"
+    event = _event("charge.refunded", {
+        "id": "ch_test_123",
+        "customer": "cus_test_123",
+        "amount_refunded": 26000,
+    })
+
+    with patch("app.api.billing.stripe") as mock_stripe, \
+         patch("app.api.billing._notify_admin", new_callable=AsyncMock) as mock_notify, \
+         patch("app.api.billing.async_session_factory") as mock_sf:
+
+        mock_stripe.Webhook.construct_event.return_value = event
+        mock_sf.return_value = _mock_db_session(test_tenant)
+
+        response = await _post_webhook(client, event)
+
+        assert response.status_code == 200
+        msg = mock_notify.call_args[0][1]
+        assert "S$260.00" in msg
+
+    test_tenant.currency = "MYR"  # reset
+
+
+@pytest.mark.asyncio
+async def test_pricing_endpoint_myr(client):
+    """Pricing endpoint returns MYR plans."""
+    response = await client.get("/api/billing/pricing?currency=MYR")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["currency"] == "MYR"
+    assert data["symbol"] == "RM"
+    assert len(data["plans"]) == 3
+    assert data["plans"][0]["price"] == 780
+    assert data["plans"][1]["price"] == 2800
+    assert data["plans"][2]["price"] == 6800
+
+
+@pytest.mark.asyncio
+async def test_pricing_endpoint_sgd(client):
+    """Pricing endpoint returns SGD plans."""
+    response = await client.get("/api/billing/pricing?currency=SGD")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["currency"] == "SGD"
+    assert data["symbol"] == "S$"
+    assert len(data["plans"]) == 3
+    assert data["plans"][0]["price"] == 260
+    assert data["plans"][1]["price"] == 930
+    assert data["plans"][2]["price"] == 2260
+
+
+@pytest.mark.asyncio
+async def test_pricing_endpoint_invalid_currency(client):
+    """Pricing endpoint rejects unsupported currency."""
+    response = await client.get("/api/billing/pricing?currency=EUR")
+    assert response.status_code == 400
+    assert "Unsupported" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_sgd_overage_rates():
+    """SGD tenant gets correct overage rates from pricing config."""
+    from app.pricing import get_overage_rate
+    assert get_overage_rate("SGD", "starter") == 0.22
+    assert get_overage_rate("SGD", "professional") == 0.15
+    assert get_overage_rate("SGD", "enterprise") == 0.10
+
+
+@pytest.mark.asyncio
+async def test_myr_overage_rates():
+    """MYR tenant gets correct overage rates from pricing config."""
+    from app.pricing import get_overage_rate
+    assert get_overage_rate("MYR", "starter") == 0.65
+    assert get_overage_rate("MYR", "professional") == 0.45
+    assert get_overage_rate("MYR", "enterprise") == 0.30

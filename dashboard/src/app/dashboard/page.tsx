@@ -19,6 +19,8 @@ export default function DashboardPage() {
 
 // ─── Tenant Dashboard (existing) ───────────────────────────────────────────
 
+const CURRENCY_SYMBOLS: Record<string, string> = { MYR: 'RM', SGD: 'S$' }
+
 function TenantDashboard() {
   const [tenant, setTenant] = useState<Record<string, unknown> | null>(null)
   const [usage, setUsage] = useState<Record<string, unknown> | null>(null)
@@ -41,6 +43,8 @@ function TenantDashboard() {
 
   if (loading) return <div className="text-gray-500">Loading...</div>
 
+  const sym = CURRENCY_SYMBOLS[String(tenant?.currency || 'MYR')] || 'RM'
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Dashboard Overview</h1>
@@ -62,7 +66,7 @@ function TenantDashboard() {
           <StatCard label="Conversations" value={String(usage.total_conversations)} subtitle={`of ${usage.included_conversations} included`} />
           <StatCard label="Messages" value={String(usage.total_messages)} subtitle="this month" />
           <StatCard label="Remaining" value={String(usage.remaining_conversations)} subtitle="conversations" />
-          <StatCard label="Overage Cost" value={`RM${usage.overage_cost}`} subtitle={`${usage.overage_conversations} extra conversations`} />
+          <StatCard label="Overage Cost" value={`${sym}${usage.overage_cost}`} subtitle={`${usage.overage_conversations} extra conversations`} />
         </div>
       )}
     </div>
@@ -76,15 +80,17 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [pricingByKey, setPricingByKey] = useState<Record<string, { symbol: string; plans: Array<{ id: string; name: string; price: number }> }>>({})
   const [form, setForm] = useState({
     name: '',
     slug: '',
     plan: 'starter',
+    currency: 'MYR',
     whatsapp_phone_number_id: '',
     admin_phone_numbers: '',
   })
 
-  useEffect(() => { loadTenants() }, [])
+  useEffect(() => { loadTenants(); loadPricing() }, [])
 
   async function loadTenants() {
     try {
@@ -97,6 +103,18 @@ function AdminDashboard() {
     }
   }
 
+  async function loadPricing() {
+    try {
+      const [myr, sgd] = await Promise.all([
+        api.getPricing('MYR'),
+        api.getPricing('SGD'),
+      ]) as Array<{ symbol: string; plans: Array<{ id: string; name: string; price: number }> }>
+      setPricingByKey({ MYR: myr, SGD: sgd })
+    } catch (err) {
+      console.error('Failed to load pricing:', err)
+    }
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setCreating(true)
@@ -105,6 +123,7 @@ function AdminDashboard() {
         name: form.name,
         slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
         plan: form.plan,
+        currency: form.currency,
       }
       if (form.whatsapp_phone_number_id) payload.whatsapp_phone_number_id = form.whatsapp_phone_number_id
       if (form.admin_phone_numbers) payload.admin_phone_numbers = form.admin_phone_numbers
@@ -113,7 +132,7 @@ function AdminDashboard() {
       const tenant = result.tenant as Record<string, unknown>
       alert(`Tenant created!\n\nAPI Key: ${result.api_key}\nJWT Token: ${result.jwt_token}\n\nSave these - they won't be shown again.`)
       setShowCreate(false)
-      setForm({ name: '', slug: '', plan: 'starter', whatsapp_phone_number_id: '', admin_phone_numbers: '' })
+      setForm({ name: '', slug: '', plan: 'starter', currency: 'MYR', whatsapp_phone_number_id: '', admin_phone_numbers: '' })
       // If tenant was created with the response having an id
       if (tenant?.id) {
         loadTenants()
@@ -159,8 +178,8 @@ function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Tenants" value={String(tenants.length)} subtitle="accounts" />
         <StatCard label="Active" value={String(activeTenants)} subtitle="tenants" />
-        <StatCard label="Starter" value={String(planCounts.starter || 0)} subtitle="RM780/mo each" />
-        <StatCard label="Professional" value={String(planCounts.professional || 0)} subtitle="RM2,800/mo each" />
+        <StatCard label="Starter" value={String(planCounts.starter || 0)} subtitle="tenants" />
+        <StatCard label="Professional" value={String(planCounts.professional || 0)} subtitle="tenants" />
       </div>
 
       {/* Create Form */}
@@ -181,12 +200,25 @@ function AdminDashboard() {
             <input value={form.slug}
               onChange={e => setForm(p => ({ ...p, slug: e.target.value }))}
               placeholder="slug (auto-generated)" className="px-3 py-2 border rounded-lg text-sm" />
+            <select value={form.currency}
+              onChange={e => setForm(p => ({ ...p, currency: e.target.value }))}
+              className="px-3 py-2 border rounded-lg text-sm bg-white">
+              <option value="MYR">MYR (Malaysia)</option>
+              <option value="SGD">SGD (Singapore)</option>
+            </select>
             <select value={form.plan}
               onChange={e => setForm(p => ({ ...p, plan: e.target.value }))}
               className="px-3 py-2 border rounded-lg text-sm bg-white">
-              <option value="starter">Starter (RM780/mo)</option>
-              <option value="professional">Professional (RM2,800/mo)</option>
-              <option value="enterprise">Enterprise (RM6,800/mo)</option>
+              {(pricingByKey[form.currency]?.plans || []).map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({pricingByKey[form.currency]?.symbol}{p.price.toLocaleString()}/mo)</option>
+              ))}
+              {!pricingByKey[form.currency] && (
+                <>
+                  <option value="starter">Starter</option>
+                  <option value="professional">Professional</option>
+                  <option value="enterprise">Enterprise</option>
+                </>
+              )}
             </select>
             <input value={form.whatsapp_phone_number_id}
               onChange={e => setForm(p => ({ ...p, whatsapp_phone_number_id: e.target.value }))}

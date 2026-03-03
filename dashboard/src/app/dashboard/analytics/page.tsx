@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 
+const CURRENCY_SYMBOLS: Record<string, string> = { MYR: 'RM', SGD: 'S$' }
+
 export default function AnalyticsPage() {
   const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null)
   const [productPerf, setProductPerf] = useState<Array<Record<string, unknown>>>([])
@@ -11,16 +13,22 @@ export default function AnalyticsPage() {
   const [optimizing, setOptimizing] = useState(false)
   const [analysisResult, setAnalysisResult] = useState<Record<string, unknown> | null>(null)
   const [optimizeResult, setOptimizeResult] = useState<Record<string, unknown> | null>(null)
+  const [currencySymbol, setCurrencySymbol] = useState('RM')
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     try {
-      const [dash, prods, strats] = await Promise.all([
+      const [dash, prods, strats, tenant] = await Promise.all([
         api.getSalesDashboard().catch(() => null),
         api.getProductPerformance().catch(() => ({})),
         api.getStrategyPerformance().catch(() => ({})),
+        api.getMe().catch(() => null),
       ])
+      if (tenant) {
+        const currency = String((tenant as Record<string, unknown>).currency || 'MYR')
+        setCurrencySymbol(CURRENCY_SYMBOLS[currency] || 'RM')
+      }
       setDashboard(dash)
 
       // Handle both array and object responses
@@ -90,7 +98,7 @@ export default function AnalyticsPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Revenue" value={`RM${totalRevenue.toFixed(2)}`} subtitle="attributed to bot" />
+        <StatCard label="Total Revenue" value={`${currencySymbol}${totalRevenue.toFixed(2)}`} subtitle="attributed to bot" />
         <StatCard label="Conversion Rate" value={`${conversionRate.toFixed(1)}%`} subtitle={`${totalConversions} of ${totalAttempts} attempts`} />
         <StatCard label="Upsell Attempts" value={String(totalAttempts)} subtitle="products presented" />
         <StatCard label="Interest Shown" value={String(totalInterest)} subtitle="guests engaged" />
@@ -137,7 +145,7 @@ export default function AnalyticsPage() {
                       <td className="py-2 px-3 font-medium">{String(p.name || p.product_name || '')}</td>
                       <td className="py-2 px-3 text-right">{presented}</td>
                       <td className="py-2 px-3 text-right">{conversions}</td>
-                      <td className="py-2 px-3 text-right text-green-700">RM{rev.toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right text-green-700">{currencySymbol}{rev.toFixed(2)}</td>
                       <td className="py-2 px-3 text-right">{rate.toFixed(1)}%</td>
                     </tr>
                   )
@@ -192,7 +200,7 @@ export default function AnalyticsPage() {
                       </td>
                       <td className="py-2 px-3 text-right">{attempts}</td>
                       <td className="py-2 px-3 text-right">{conversions}</td>
-                      <td className="py-2 px-3 text-right text-green-700">RM{rev.toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right text-green-700">{currencySymbol}{rev.toFixed(2)}</td>
                       <td className="py-2 px-3 text-right">{rate.toFixed(1)}%</td>
                     </tr>
                   )

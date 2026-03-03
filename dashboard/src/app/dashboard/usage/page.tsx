@@ -23,11 +23,19 @@ interface Usage {
   overage_cost: number
 }
 
-const PLANS = [
-  { id: 'starter', name: 'Starter', price: 780, conversations: 500 },
-  { id: 'professional', name: 'Professional', price: 2800, conversations: 2000 },
-  { id: 'enterprise', name: 'Enterprise', price: 6800, conversations: 10000 },
-]
+interface PlanInfo {
+  id: string
+  name: string
+  price: number
+  conversations: number
+  overage_rate: number
+}
+
+interface PricingInfo {
+  currency: string
+  symbol: string
+  plans: PlanInfo[]
+}
 
 export default function UsagePage() {
   return (
@@ -40,21 +48,30 @@ export default function UsagePage() {
 function UsageContent() {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [pricing, setPricing] = useState<PricingInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const searchParams = useSearchParams()
   const paymentStatus = searchParams.get('payment')
 
+  const sym = pricing?.symbol || 'RM'
+  const plans = pricing?.plans || []
+
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     try {
-      const [u, s] = await Promise.all([
+      const [u, s, tenant] = await Promise.all([
         api.getMonthlyUsage(),
         api.getSubscriptionStatus(),
+        api.getMe(),
       ])
       setUsage(u as Usage)
       setSubscription(s as Subscription)
+
+      const currency = (tenant as any)?.currency || 'MYR'
+      const p = await api.getPricing(currency)
+      setPricing(p as PricingInfo)
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
@@ -166,14 +183,14 @@ function UsageContent() {
       )}
 
       {/* Plan Selection (if no subscription) */}
-      {subscription && !subscription.has_subscription && (
+      {subscription && !subscription.has_subscription && plans.length > 0 && (
         <div className="mb-8">
           <h3 className="font-semibold text-gray-700 mb-4">Choose a Plan</h3>
           <div className="grid grid-cols-3 gap-4">
-            {PLANS.map(plan => (
+            {plans.map(plan => (
               <div key={plan.id} className="p-6 bg-white rounded-xl shadow-sm border text-center">
                 <h4 className="font-bold text-lg">{plan.name}</h4>
-                <p className="text-3xl font-bold text-gray-800 mt-2">RM{plan.price.toLocaleString()}<span className="text-sm text-gray-400">/mo</span></p>
+                <p className="text-3xl font-bold text-gray-800 mt-2">{sym}{plan.price.toLocaleString()}<span className="text-sm text-gray-400">/mo</span></p>
                 <p className="text-xs text-gray-500 mt-2">{plan.conversations.toLocaleString()} conversations included</p>
                 <button onClick={() => handleSubscribe(plan.id)} disabled={actionLoading}
                   className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
@@ -192,7 +209,7 @@ function UsageContent() {
             <Card label="Conversations" value={String(usage.total_conversations)} />
             <Card label="Messages" value={String(usage.total_messages)} />
             <Card label="Tokens Used" value={usage.total_tokens.toLocaleString()} />
-            <Card label="Est. Cost" value={`RM${usage.total_cost.toFixed(2)}`} />
+            <Card label="Est. Cost" value={`${sym}${usage.total_cost.toFixed(2)}`} />
           </div>
 
           <div className="p-6 bg-white rounded-xl shadow-sm border mb-6">
@@ -203,7 +220,7 @@ function UsageContent() {
               <Row label="Used" value={<span>{usage.total_conversations}</span>} />
               <Row label="Remaining" value={<span>{usage.remaining_conversations}</span>} />
               <Row label="Overage Conversations" value={<span>{usage.overage_conversations}</span>} />
-              <Row label="Overage Cost" value={<span>RM{usage.overage_cost}</span>} />
+              <Row label="Overage Cost" value={<span>{sym}{usage.overage_cost}</span>} />
             </div>
           </div>
 

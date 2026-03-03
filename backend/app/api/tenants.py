@@ -17,6 +17,7 @@ from app.api.auth import (
     create_jwt_token,
 )
 from app.services.billing import BillingService
+from app.pricing import SUPPORTED_CURRENCIES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tenants", tags=["tenants"])
@@ -26,6 +27,7 @@ class TenantCreate(BaseModel):
     name: str
     slug: str
     plan: PlanType = PlanType.STARTER
+    currency: str = "MYR"
     whatsapp_phone_number_id: Optional[str] = None
     whatsapp_business_account_id: Optional[str] = None
     whatsapp_access_token: Optional[str] = None
@@ -47,6 +49,7 @@ class TenantResponse(BaseModel):
     name: str
     slug: str
     plan: str
+    currency: str = "MYR"
     status: str
     whatsapp_phone_number_id: Optional[str] = None
     created_at: str
@@ -68,6 +71,11 @@ async def create_tenant(
     _admin: bool = Depends(verify_admin),
 ):
     """Create a new tenant (admin only)."""
+    # Validate currency
+    currency = data.currency.upper()
+    if currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Unsupported currency: {currency}. Supported: {', '.join(SUPPORTED_CURRENCIES)}")
+
     # Check slug uniqueness
     existing = await db.execute(select(Tenant).where(Tenant.slug == data.slug))
     if existing.scalar_one_or_none():
@@ -81,6 +89,7 @@ async def create_tenant(
         api_key=api_key[:16],  # store prefix for identification
         api_key_hash=hash_api_key(api_key),
         plan=data.plan,
+        currency=currency,
         status=TenantStatus.ONBOARDING,
         whatsapp_phone_number_id=data.whatsapp_phone_number_id,
         whatsapp_business_account_id=data.whatsapp_business_account_id,
@@ -98,6 +107,7 @@ async def create_tenant(
             name=tenant.name,
             slug=tenant.slug,
             plan=tenant.plan.value,
+            currency=tenant.currency,
             status=tenant.status.value,
             whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
             created_at=tenant.created_at.isoformat(),
@@ -117,6 +127,7 @@ async def get_my_tenant(
         name=tenant.name,
         slug=tenant.slug,
         plan=tenant.plan.value,
+        currency=tenant.currency,
         status=tenant.status.value,
         whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
         created_at=tenant.created_at.isoformat(),
@@ -149,6 +160,7 @@ async def update_my_tenant(
         name=tenant.name,
         slug=tenant.slug,
         plan=tenant.plan.value,
+        currency=tenant.currency,
         status=tenant.status.value,
         whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
         created_at=tenant.created_at.isoformat(),
@@ -169,6 +181,7 @@ async def list_tenants(
             name=t.name,
             slug=t.slug,
             plan=t.plan.value,
+            currency=t.currency,
             status=t.status.value,
             whatsapp_phone_number_id=t.whatsapp_phone_number_id,
             created_at=t.created_at.isoformat(),
@@ -213,6 +226,7 @@ async def admin_update_tenant(
         name=tenant.name,
         slug=tenant.slug,
         plan=tenant.plan.value,
+        currency=tenant.currency,
         status=tenant.status.value,
         whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
         created_at=tenant.created_at.isoformat(),

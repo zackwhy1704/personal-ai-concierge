@@ -33,6 +33,7 @@ class Tenant(Base):
     whatsapp_business_account_id = Column(String(50), nullable=True)
     whatsapp_access_token = Column(String(512), nullable=True)
     plan = Column(SAEnum(PlanType), default=PlanType.STARTER, nullable=False)
+    currency = Column(String(3), default="MYR", nullable=False)
     status = Column(SAEnum(TenantStatus), default=TenantStatus.ONBOARDING, nullable=False)
     stripe_customer_id = Column(String(100), nullable=True)
     stripe_subscription_id = Column(String(100), nullable=True)
@@ -56,27 +57,27 @@ class Tenant(Base):
         return [p.strip() for p in self.admin_phone_numbers.split(",")]
 
     def get_plan_limits(self) -> dict:
+        from app.pricing import get_overage_rate
         limits = {
             PlanType.STARTER: {
                 "monthly_conversations": 500,
-                "overage_rate": 0.65,
                 "max_documents": 50,
                 "max_intents": 10,
                 "max_languages": 2,
             },
             PlanType.PROFESSIONAL: {
                 "monthly_conversations": 2000,
-                "overage_rate": 0.45,
                 "max_documents": 200,
                 "max_intents": 50,
                 "max_languages": 5,
             },
             PlanType.ENTERPRISE: {
                 "monthly_conversations": 10000,
-                "overage_rate": 0.30,
                 "max_documents": -1,  # unlimited
                 "max_intents": -1,
                 "max_languages": -1,
             },
         }
-        return limits[self.plan]
+        result = limits[self.plan]
+        result["overage_rate"] = get_overage_rate(self.currency, self.plan.value)
+        return result
