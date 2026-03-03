@@ -6,18 +6,26 @@ import { api } from '@/lib/api'
 export default function LoginPage() {
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setLoading(true)
     try {
-      api.setToken(token)
-      await api.getMe()
+      api.setToken(token.trim())
+      if (api.isAdmin()) {
+        await api.listTenants()
+      } else {
+        await api.getMe()
+      }
       router.push('/dashboard')
     } catch {
-      setError('Invalid token. Please check your API key or JWT token.')
+      setError('Invalid token. Please check your API key or admin key.')
       api.clearToken()
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -28,7 +36,7 @@ export default function LoginPage() {
           AI Concierge Dashboard
         </h1>
         <p className="text-center text-gray-500 mb-8">
-          Enter your API key or JWT token to access the dashboard
+          Enter your API key or admin key to access the dashboard
         </p>
 
         <form onSubmit={handleLogin}>
@@ -40,10 +48,11 @@ export default function LoginPage() {
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="pac_... or eyJ..."
+              placeholder="pac_... or pac_admin_..."
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             />
+            <p className="text-xs text-gray-400 mt-1">Tenant API key or platform admin key</p>
           </div>
 
           {error && (
@@ -54,9 +63,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            disabled={loading}
+            className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
           >
-            Sign In
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
       </div>

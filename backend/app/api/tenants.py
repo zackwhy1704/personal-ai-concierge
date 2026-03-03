@@ -219,6 +219,22 @@ async def admin_update_tenant(
     )
 
 
+@router.post("/{tenant_id}/token")
+async def get_tenant_token(
+    tenant_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: bool = Depends(verify_admin),
+):
+    """Generate a JWT token for a specific tenant (admin only)."""
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    jwt_token = create_jwt_token(str(tenant.id))
+    return {"jwt_token": jwt_token, "tenant_id": str(tenant.id), "tenant_name": tenant.name}
+
+
 @router.post("/me/activate")
 async def activate_tenant(
     tenant: Tenant = Depends(get_current_tenant),

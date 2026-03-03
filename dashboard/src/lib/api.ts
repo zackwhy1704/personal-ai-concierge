@@ -22,11 +22,73 @@ class ApiClient {
     this.token = null;
     if (typeof window !== 'undefined') {
       localStorage.removeItem('auth_token');
+      localStorage.removeItem('managed_token');
+      localStorage.removeItem('managed_tenant_id');
+      localStorage.removeItem('managed_tenant_name');
+    }
+  }
+
+  isAdmin(): boolean {
+    const token = this.getToken();
+    return !!token && token.startsWith('pac_admin_');
+  }
+
+  setManagedToken(jwt: string, tenantId: string, tenantName: string) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('managed_token', jwt);
+      localStorage.setItem('managed_tenant_id', tenantId);
+      localStorage.setItem('managed_tenant_name', tenantName);
+    }
+  }
+
+  getManagedToken(): string | null {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('managed_token');
+    }
+    return null;
+  }
+
+  getManagedTenantName(): string | null {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('managed_tenant_name');
+    }
+    return null;
+  }
+
+  getManagedTenantId(): string | null {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('managed_tenant_id');
+    }
+    return null;
+  }
+
+  clearManagedToken() {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('managed_token');
+      localStorage.removeItem('managed_tenant_id');
+      localStorage.removeItem('managed_tenant_name');
     }
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = this.getToken();
+    // If admin is managing a tenant, use the managed JWT for tenant-scoped requests
+    const managedToken = this.getManagedToken();
+    const adminToken = this.getToken();
+
+    // Admin-only endpoints always use the admin token
+    const isAdminEndpoint = path === '/api/tenants' && (!options.method || options.method === 'GET')
+      || (path.startsWith('/api/tenants/') && path.endsWith('/token'))
+      || (path.startsWith('/api/tenants') && options.method === 'POST' && !path.includes('/me'));
+
+    let token: string | null;
+    if (isAdminEndpoint && this.isAdmin()) {
+      token = adminToken;
+    } else if (managedToken && this.isAdmin()) {
+      token = managedToken;
+    } else {
+      token = adminToken;
+    }
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
@@ -63,6 +125,25 @@ class ApiClient {
 
   async updateMe(data: Record<string, unknown>) {
     return this.request('/api/tenants/me', { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  // Admin - Tenant Management
+  async listTenants() {
+    return this.request<Array<Record<string, unknown>>>('/api/tenants');
+  }
+
+  async createTenant(data: Record<string, unknown>) {
+    return this.request('/api/tenants', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateTenant(id: string, data: Record<string, unknown>) {
+    return this.request(`/api/tenants/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async getTenantToken(id: string) {
+    return this.request<{ jwt_token: string; tenant_id: string; tenant_name: string }>(
+      `/api/tenants/${id}/token`, { method: 'POST' }
+    );
   }
 
   // Guardrails
@@ -144,6 +225,89 @@ class ApiClient {
 
   async reactivateSubscription() {
     return this.request('/api/billing/reactivate', { method: 'POST' });
+  }
+
+  // Products
+  async listProducts(category?: string) {
+    const params = new URLSearchParams();
+    if (category) params.set('category', category);
+    return this.request<Array<Record<string, unknown>>>(`/api/products?${params}`);
+  }
+
+  async createProduct(data: Record<string, unknown>) {
+    return this.request('/api/products', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateProduct(id: string, data: Record<string, unknown>) {
+    return this.request(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteProduct(id: string) {
+    return this.request(`/api/products/${id}`, { method: 'DELETE' });
+  }
+
+  async searchProducts(query: string) {
+    return this.request<Record<string, unknown>>('/api/products/search', {
+      method: 'POST', body: JSON.stringify({ query }),
+    });
+  }
+
+  async importProducts(products: Array<Record<string, unknown>>) {
+    return this.request('/api/products/import', {
+      method: 'POST', body: JSON.stringify(products),
+    });
+  }
+
+  // Upsell Strategies
+  async listStrategies() {
+    return this.request<Array<Record<string, unknown>>>('/api/upsell/strategies');
+  }
+
+  async createStrategy(data: Record<string, unknown>) {
+    return this.request('/api/upsell/strategies', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateStrategy(id: string, data: Record<string, unknown>) {
+    return this.request(`/api/upsell/strategies/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteStrategy(id: string) {
+    return this.request(`/api/upsell/strategies/${id}`, { method: 'DELETE' });
+  }
+
+  async toggleStrategy(id: string) {
+    return this.request<{ status: string; is_active: boolean }>(
+      `/api/upsell/strategies/${id}/toggle`, { method: 'POST' }
+    );
+  }
+
+  async testStrategies(message: string) {
+    return this.request<Record<string, unknown>>('/api/upsell/strategies/test', {
+      method: 'POST', body: JSON.stringify({ message }),
+    });
+  }
+
+  // Sales Analytics
+  async getSalesDashboard(days?: number) {
+    const params = new URLSearchParams();
+    if (days) params.set('days', String(days));
+    return this.request<Record<string, unknown>>(`/api/sales/dashboard?${params}`);
+  }
+
+  async getProductPerformance() {
+    return this.request<Record<string, unknown>>('/api/sales/products/performance');
+  }
+
+  async getStrategyPerformance() {
+    return this.request<Record<string, unknown>>('/api/sales/strategies/performance');
+  }
+
+  async analyzeLearning() {
+    return this.request<Record<string, unknown>>('/api/sales/learning/analyze', { method: 'POST' });
+  }
+
+  async optimizeLearning() {
+    return this.request<Record<string, unknown>>('/api/sales/learning/optimize', { method: 'POST' });
   }
 }
 
