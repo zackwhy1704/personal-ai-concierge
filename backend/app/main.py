@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.database import init_db
 from app.services.vector_store import VectorStoreService
-from app.api import webhooks, tenants, guardrails, usage, intents, knowledge, billing
+from app.api import webhooks, tenants, guardrails, usage, intents, knowledge, billing, auth
 from app.api import products, upsell_strategies, sales_analytics
 
 logging.basicConfig(
@@ -59,6 +59,7 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(auth.router)
 app.include_router(webhooks.router)
 app.include_router(tenants.router)
 app.include_router(guardrails.router)

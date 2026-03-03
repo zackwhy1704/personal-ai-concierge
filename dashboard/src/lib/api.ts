@@ -2,12 +2,16 @@ const API_BASE = process.env.NEXT_PUBLIC_API || process.env.NEXT_PUBLIC_API_URL 
 
 class ApiClient {
   private token: string | null = null;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshPromise: Promise<void> | null = null;
 
   setToken(token: string) {
     this.token = token;
     if (typeof window !== 'undefined') {
       localStorage.setItem('auth_token', token);
     }
+    // Start refresh timer for JWT tokens (not API keys)
+    this.scheduleTokenRefresh(token);
   }
 
   getToken(): string | null {
@@ -20,6 +24,7 @@ class ApiClient {
 
   clearToken() {
     this.token = null;
+    this.clearRefreshTimer();
     if (typeof window !== 'undefined') {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('managed_token');
@@ -39,6 +44,7 @@ class ApiClient {
       localStorage.setItem('managed_tenant_id', tenantId);
       localStorage.setItem('managed_tenant_name', tenantName);
     }
+    this.scheduleTokenRefresh(jwt, true);
   }
 
   getManagedToken(): string | null {
@@ -69,6 +75,106 @@ class ApiClient {
       localStorage.removeItem('managed_tenant_name');
     }
   }
+
+  // ── Token refresh logic ──────────────────────────────────
+
+  private decodeJwtExpiry(token: string): number | null {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.exp || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private clearRefreshTimer() {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private scheduleTokenRefresh(token: string, isManaged = false) {
+    // Only schedule for JWT tokens (not API keys starting with pac_)
+    if (token.startsWith('pac_')) return;
+
+    const exp = this.decodeJwtExpiry(token);
+    if (!exp) return;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const remainingSec = exp - nowSec;
+
+    // Refresh 5 minutes before expiry, or immediately if <5 min left
+    const refreshInMs = Math.max((remainingSec - 300) * 1000, 0);
+
+    this.clearRefreshTimer();
+    this.refreshTimer = setTimeout(() => {
+      this.doRefresh(token, isManaged).catch(() => {
+        // If refresh fails, user will get a 401 on next request and be redirected to login
+      });
+    }, refreshInMs);
+  }
+
+  private async doRefresh(token: string, isManaged: boolean): Promise<void> {
+    // Prevent concurrent refreshes
+    if (this.refreshPromise) return this.refreshPromise;
+
+    this.refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const newToken = data.token;
+
+        if (isManaged) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('managed_token', newToken);
+          }
+          this.scheduleTokenRefresh(newToken, true);
+        } else {
+          this.token = newToken;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('auth_token', newToken);
+          }
+          this.scheduleTokenRefresh(newToken, false);
+        }
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  /**
+   * Initialize refresh timers for any stored tokens on page load.
+   * Call this once from the app's root layout or page.
+   */
+  initTokenRefresh() {
+    if (typeof window === 'undefined') return;
+
+    const authToken = localStorage.getItem('auth_token');
+    if (authToken && !authToken.startsWith('pac_')) {
+      this.scheduleTokenRefresh(authToken, false);
+    }
+
+    const managedToken = localStorage.getItem('managed_token');
+    if (managedToken) {
+      this.scheduleTokenRefresh(managedToken, true);
+    }
+  }
+
+  // ── Request method ──────────────────────────────────────
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     // If admin is managing a tenant, use the managed JWT for tenant-scoped requests
@@ -102,7 +208,22 @@ class ApiClient {
       headers,
     });
 
-    if (response.status === 401) {
+    // On 401, try refreshing the token once before giving up
+    if (response.status === 401 && token && !token.startsWith('pac_')) {
+      const isManaged = !!(managedToken && this.isAdmin() && !isAdminEndpoint);
+      try {
+        await this.doRefresh(token, isManaged);
+        // Retry the request with the new token
+        const newToken = isManaged ? this.getManagedToken() : this.getToken();
+        if (newToken && newToken !== token) {
+          headers['Authorization'] = `Bearer ${newToken}`;
+          const retryResponse = await fetch(`${API_BASE}${path}`, { ...options, headers });
+          if (retryResponse.ok) return retryResponse.json();
+        }
+      } catch {
+        // Refresh failed, fall through to redirect
+      }
+
       this.clearToken();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';

@@ -230,7 +230,7 @@ async def test_webhook_payment_succeeded(client, test_tenant):
         assert response.status_code == 200
         mock_notify.assert_called_once()
         notify_msg = mock_notify.call_args[0][1]
-        assert "$299.00" in notify_msg
+        assert "RM299.00" in notify_msg
         assert "Payment received" in notify_msg
 
 
@@ -454,7 +454,7 @@ async def test_webhook_refund_notification(client, test_tenant):
 
         assert response.status_code == 200
         mock_notify.assert_called_once()
-        assert "$299.00" in mock_notify.call_args[0][1]
+        assert "RM299.00" in mock_notify.call_args[0][1]
         assert "refund" in mock_notify.call_args[0][1].lower()
 
 
