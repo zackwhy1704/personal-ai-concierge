@@ -24,9 +24,9 @@ interface Usage {
 }
 
 const PLANS = [
-  { id: 'starter', name: 'Starter', price: 99, conversations: 500 },
-  { id: 'professional', name: 'Professional', price: 299, conversations: 2000 },
-  { id: 'enterprise', name: 'Enterprise', price: 799, conversations: 10000 },
+  { id: 'starter', name: 'Starter', price: 780, conversations: 500 },
+  { id: 'professional', name: 'Professional', price: 2800, conversations: 2000 },
+  { id: 'enterprise', name: 'Enterprise', price: 6800, conversations: 10000 },
 ]
 
 export default function UsagePage() {
@@ -173,7 +173,7 @@ function UsageContent() {
             {PLANS.map(plan => (
               <div key={plan.id} className="p-6 bg-white rounded-xl shadow-sm border text-center">
                 <h4 className="font-bold text-lg">{plan.name}</h4>
-                <p className="text-3xl font-bold text-gray-800 mt-2">${plan.price}<span className="text-sm text-gray-400">/mo</span></p>
+                <p className="text-3xl font-bold text-gray-800 mt-2">RM{plan.price.toLocaleString()}<span className="text-sm text-gray-400">/mo</span></p>
                 <p className="text-xs text-gray-500 mt-2">{plan.conversations.toLocaleString()} conversations included</p>
                 <button onClick={() => handleSubscribe(plan.id)} disabled={actionLoading}
                   className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
@@ -192,7 +192,7 @@ function UsageContent() {
             <Card label="Conversations" value={String(usage.total_conversations)} />
             <Card label="Messages" value={String(usage.total_messages)} />
             <Card label="Tokens Used" value={usage.total_tokens.toLocaleString()} />
-            <Card label="Est. Cost" value={`$${usage.total_cost.toFixed(2)}`} />
+            <Card label="Est. Cost" value={`RM${usage.total_cost.toFixed(2)}`} />
           </div>
 
           <div className="p-6 bg-white rounded-xl shadow-sm border mb-6">
@@ -203,7 +203,7 @@ function UsageContent() {
               <Row label="Used" value={<span>{usage.total_conversations}</span>} />
               <Row label="Remaining" value={<span>{usage.remaining_conversations}</span>} />
               <Row label="Overage Conversations" value={<span>{usage.overage_conversations}</span>} />
-              <Row label="Overage Cost" value={<span>${usage.overage_cost}</span>} />
+              <Row label="Overage Cost" value={<span>RM{usage.overage_cost}</span>} />
             </div>
           </div>
 

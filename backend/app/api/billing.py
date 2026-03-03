@@ -48,9 +48,9 @@ def _get_price_to_plan() -> dict:
 
 
 PLAN_PRICES = {
-    PlanType.STARTER: 99,
-    PlanType.PROFESSIONAL: 299,
-    PlanType.ENTERPRISE: 799,
+    PlanType.STARTER: 780,
+    PlanType.PROFESSIONAL: 2800,
+    PlanType.ENTERPRISE: 6800,
 }
 
 whatsapp = WhatsAppService()
@@ -280,7 +280,7 @@ async def _handle_checkout_completed(session: dict):
         await _notify_admin(
             tenant,
             f"Payment successful! Your {plan_str.title()} plan "
-            f"(${PLAN_PRICES.get(PlanType(plan_str), '?')}/mo) is now active.\n\n"
+            f"(RM{PLAN_PRICES.get(PlanType(plan_str), '?')}/mo) is now active.\n\n"
             f"Subscription ID: {subscription_id}\n"
             f"You're all set to start using AI Concierge!",
         )
@@ -327,7 +327,7 @@ async def _handle_payment_succeeded(invoice: dict):
 
         await _notify_admin(
             tenant,
-            f"Payment received: ${amount_paid:.2f}\n"
+            f"Payment received: RM{amount_paid:.2f}\n"
             f"Plan: {tenant.plan.value.title()}\n"
             f"Next billing date: {next_date}\n"
             f"Thank you for your continued subscription!",
@@ -363,7 +363,7 @@ async def _handle_payment_failed(invoice: dict):
             await _notify_admin(
                 tenant,
                 f"URGENT: Your account has been suspended due to repeated payment failures.\n\n"
-                f"Amount due: ${amount_due:.2f}\n"
+                f"Amount due: RM{amount_due:.2f}\n"
                 f"Failed attempts: {attempt_count}\n\n"
                 f"Please update your payment method at the dashboard to restore service.\n"
                 f"Your chatbot will stop responding to guests until payment is resolved.",
@@ -376,7 +376,7 @@ async def _handle_payment_failed(invoice: dict):
             await _notify_admin(
                 tenant,
                 f"Payment failed (attempt {attempt_count}/3)\n\n"
-                f"Amount: ${amount_due:.2f}\n"
+                f"Amount: RM{amount_due:.2f}\n"
                 f"Next retry: {next_retry}\n\n"
                 f"Please ensure your payment method is up to date in the dashboard.",
             )
@@ -416,7 +416,7 @@ async def _handle_subscription_updated(subscription: dict):
                 await _notify_admin(
                     tenant,
                     f"Plan changed: {old_plan.value.title()} -> {new_plan.value.title()}\n"
-                    f"New monthly rate: ${PLAN_PRICES.get(new_plan, '?')}/mo\n"
+                    f"New monthly rate: RM{PLAN_PRICES.get(new_plan, '?')}/mo\n"
                     f"Changes take effect immediately.",
                 )
                 return
@@ -572,7 +572,7 @@ async def _handle_dispute_created(dispute: dict):
         await _notify_admin(
             tenant,
             f"URGENT: A payment dispute has been filed.\n\n"
-            f"Amount: ${amount:.2f}\n"
+            f"Amount: RM{amount:.2f}\n"
             f"Reason: {reason}\n\n"
             f"Your account has been suspended pending resolution.\n"
             f"Please contact support immediately.",
@@ -599,7 +599,7 @@ async def _handle_refund(charge: dict):
 
         await _notify_admin(
             tenant,
-            f"A refund of ${amount_refunded:.2f} has been processed to your account.\n"
+            f"A refund of RM{amount_refunded:.2f} has been processed to your account.\n"
             f"Please allow 5-10 business days for the refund to appear.",
         )
 

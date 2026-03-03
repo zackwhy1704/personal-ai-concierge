@@ -90,7 +90,7 @@ export default function AnalyticsPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Revenue" value={`$${totalRevenue.toFixed(2)}`} subtitle="attributed to bot" />
+        <StatCard label="Total Revenue" value={`RM${totalRevenue.toFixed(2)}`} subtitle="attributed to bot" />
         <StatCard label="Conversion Rate" value={`${conversionRate.toFixed(1)}%`} subtitle={`${totalConversions} of ${totalAttempts} attempts`} />
         <StatCard label="Upsell Attempts" value={String(totalAttempts)} subtitle="products presented" />
         <StatCard label="Interest Shown" value={String(totalInterest)} subtitle="guests engaged" />
@@ -137,7 +137,7 @@ export default function AnalyticsPage() {
                       <td className="py-2 px-3 font-medium">{String(p.name || p.product_name || '')}</td>
                       <td className="py-2 px-3 text-right">{presented}</td>
                       <td className="py-2 px-3 text-right">{conversions}</td>
-                      <td className="py-2 px-3 text-right text-green-700">${rev.toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right text-green-700">RM{rev.toFixed(2)}</td>
                       <td className="py-2 px-3 text-right">{rate.toFixed(1)}%</td>
                     </tr>
                   )
@@ -192,7 +192,7 @@ export default function AnalyticsPage() {
                       </td>
                       <td className="py-2 px-3 text-right">{attempts}</td>
                       <td className="py-2 px-3 text-right">{conversions}</td>
-                      <td className="py-2 px-3 text-right text-green-700">${rev.toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right text-green-700">RM{rev.toFixed(2)}</td>
                       <td className="py-2 px-3 text-right">{rate.toFixed(1)}%</td>
                     </tr>
                   )

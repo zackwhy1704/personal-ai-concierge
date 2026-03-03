@@ -62,7 +62,7 @@ function TenantDashboard() {
           <StatCard label="Conversations" value={String(usage.total_conversations)} subtitle={`of ${usage.included_conversations} included`} />
           <StatCard label="Messages" value={String(usage.total_messages)} subtitle="this month" />
           <StatCard label="Remaining" value={String(usage.remaining_conversations)} subtitle="conversations" />
-          <StatCard label="Overage Cost" value={`$${usage.overage_cost}`} subtitle={`${usage.overage_conversations} extra conversations`} />
+          <StatCard label="Overage Cost" value={`RM${usage.overage_cost}`} subtitle={`${usage.overage_conversations} extra conversations`} />
         </div>
       )}
     </div>
@@ -159,8 +159,8 @@ function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Tenants" value={String(tenants.length)} subtitle="accounts" />
         <StatCard label="Active" value={String(activeTenants)} subtitle="tenants" />
-        <StatCard label="Starter" value={String(planCounts.starter || 0)} subtitle="$99/mo each" />
-        <StatCard label="Professional" value={String(planCounts.professional || 0)} subtitle="$299/mo each" />
+        <StatCard label="Starter" value={String(planCounts.starter || 0)} subtitle="RM780/mo each" />
+        <StatCard label="Professional" value={String(planCounts.professional || 0)} subtitle="RM2,800/mo each" />
       </div>
 
       {/* Create Form */}
@@ -184,9 +184,9 @@ function AdminDashboard() {
             <select value={form.plan}
               onChange={e => setForm(p => ({ ...p, plan: e.target.value }))}
               className="px-3 py-2 border rounded-lg text-sm bg-white">
-              <option value="starter">Starter ($99/mo)</option>
-              <option value="professional">Professional ($299/mo)</option>
-              <option value="enterprise">Enterprise ($799/mo)</option>
+              <option value="starter">Starter (RM780/mo)</option>
+              <option value="professional">Professional (RM2,800/mo)</option>
+              <option value="enterprise">Enterprise (RM6,800/mo)</option>
             </select>
             <input value={form.whatsapp_phone_number_id}
               onChange={e => setForm(p => ({ ...p, whatsapp_phone_number_id: e.target.value }))}

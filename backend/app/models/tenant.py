@@ -59,21 +59,21 @@ class Tenant(Base):
         limits = {
             PlanType.STARTER: {
                 "monthly_conversations": 500,
-                "overage_rate": 0.15,
+                "overage_rate": 0.65,
                 "max_documents": 50,
                 "max_intents": 10,
                 "max_languages": 2,
             },
             PlanType.PROFESSIONAL: {
                 "monthly_conversations": 2000,
-                "overage_rate": 0.10,
+                "overage_rate": 0.45,
                 "max_documents": 200,
                 "max_intents": 50,
                 "max_languages": 5,
             },
             PlanType.ENTERPRISE: {
                 "monthly_conversations": 10000,
-                "overage_rate": 0.07,
+                "overage_rate": 0.30,
                 "max_documents": -1,  # unlimited
                 "max_intents": -1,
                 "max_languages": -1,

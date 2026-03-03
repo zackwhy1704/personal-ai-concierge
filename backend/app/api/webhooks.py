@@ -292,13 +292,13 @@ async def _handle_admin_command(text: str, tenant: Tenant, db: AsyncSession) -> 
         return (
             f"Usage Report - {month_name}\n"
             f"{'─' * 25}\n"
-            f"Plan: {tenant.plan.value.title()} (${_plan_price(tenant.plan)}/mo)\n"
+            f"Plan: {tenant.plan.value.title()} (RM{_plan_price(tenant.plan)}/mo)\n"
             f"Conversations: {usage['total_conversations']} / {overage['included']}\n"
             f"Remaining: {overage['remaining']}\n"
-            f"Overage: {overage['overage']} (${overage['overage_cost']})\n"
+            f"Overage: {overage['overage']} (RM{overage['overage_cost']})\n"
             f"Messages: {usage['total_messages']}\n"
             f"Tokens used: {usage['total_tokens']:,}\n"
-            f"Est. cost: ${usage['total_cost']:.2f}\n\n"
+            f"Est. cost: RM{usage['total_cost']:.2f}\n\n"
             f"Dashboard: https://concierge.yourdomain.com/dashboard"
         )
 
@@ -381,7 +381,7 @@ async def _upsert_conversation(
 
 def _plan_price(plan) -> str:
     from app.models.tenant import PlanType
-    prices = {PlanType.STARTER: "99", PlanType.PROFESSIONAL: "299", PlanType.ENTERPRISE: "799"}
+    prices = {PlanType.STARTER: "780", PlanType.PROFESSIONAL: "2,800", PlanType.ENTERPRISE: "6,800"}
     return prices.get(plan, "?")
 
 
