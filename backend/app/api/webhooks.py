@@ -471,3 +471,78 @@ async def test_pipeline(request: Request):
         steps["error"] = str(e)
         steps["traceback"] = traceback.format_exc()
         return {"status": "error", "steps": steps}
+
+
+@router.post("/test-whatsapp")
+async def test_whatsapp(request: Request):
+    """Diagnostic endpoint: test WhatsApp token and optionally send a test message.
+    Requires X-Admin-Key header.
+
+    Body:
+      tenant_id: str (required)
+      send_to: str (optional) - phone number to send test message to
+    """
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+    body = await request.json()
+    tenant_id = body.get("tenant_id")
+    send_to = body.get("send_to")
+
+    import httpx
+
+    async with async_session_factory() as db:
+        result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = result.scalar_one_or_none()
+        if not tenant:
+            return {"status": "error", "error": f"Tenant {tenant_id} not found"}
+
+        checks = {
+            "tenant": tenant.name,
+            "status": tenant.status.value,
+            "phone_number_id": tenant.whatsapp_phone_number_id,
+            "has_token": bool(tenant.whatsapp_access_token),
+            "token_prefix": (tenant.whatsapp_access_token or "")[:20] + "...",
+        }
+
+        if not tenant.whatsapp_access_token:
+            checks["error"] = "No WhatsApp access token stored"
+            return {"status": "error", "checks": checks}
+
+        if not tenant.whatsapp_phone_number_id:
+            checks["error"] = "No WhatsApp phone number ID stored"
+            return {"status": "error", "checks": checks}
+
+        # Step 1: Validate token by fetching phone number info
+        async with httpx.AsyncClient(timeout=15) as client:
+            try:
+                url = f"{settings.whatsapp_api_url}/{tenant.whatsapp_phone_number_id}"
+                resp = await client.get(url, headers={
+                    "Authorization": f"Bearer {tenant.whatsapp_access_token}",
+                })
+                checks["phone_info_status"] = resp.status_code
+                checks["phone_info"] = resp.json()
+            except Exception as e:
+                checks["phone_info_error"] = str(e)
+
+            # Step 2: Optionally send a test message
+            if send_to:
+                try:
+                    send_result = await whatsapp_service.send_text_message(
+                        tenant.whatsapp_phone_number_id,
+                        tenant.whatsapp_access_token,
+                        send_to,
+                        "Test message from AI Concierge diagnostic endpoint.",
+                    )
+                    checks["send_test"] = {"status": "success", "result": send_result}
+                except httpx.HTTPStatusError as e:
+                    checks["send_test"] = {
+                        "status": "failed",
+                        "code": e.response.status_code,
+                        "body": e.response.json(),
+                    }
+                except Exception as e:
+                    checks["send_test"] = {"status": "failed", "error": str(e)}
+
+        return {"status": "ok", "checks": checks}
