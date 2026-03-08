@@ -124,24 +124,28 @@ async def create_promo_code(
             metadata={"promo_code": code, "trial_days": str(data.trial_days)},
         )
         stripe_coupon_id = coupon.id
-
-        # Create Stripe Promotion Code (the customer-facing code)
-        promo_code_params = {
-            "coupon": coupon.id,
-            "code": code,
-            "metadata": {"trial_days": str(data.trial_days)},
-        }
-        if data.max_redemptions:
-            promo_code_params["max_redemptions"] = data.max_redemptions
-        if expires_at:
-            promo_code_params["expires_at"] = int(expires_at.timestamp())
-
-        stripe_promo = stripe.PromotionCode.create(**promo_code_params)
-        stripe_promo_id = stripe_promo.id
-        logger.info(f"Created Stripe coupon {stripe_coupon_id} and promo {stripe_promo_id} for {code}")
+        logger.info(f"Created Stripe coupon {stripe_coupon_id} for {code}")
     except Exception as e:
-        logger.warning(f"Failed to create Stripe coupon/promo for {code}: {e}")
-        # Still create the local record — Stripe integration is best-effort
+        logger.warning(f"Failed to create Stripe coupon for {code}: {e}")
+
+    # Create Stripe Promotion Code (the customer-facing code)
+    if stripe_coupon_id:
+        try:
+            promo_code_params = {
+                "coupon": stripe_coupon_id,
+                "code": code,
+                "metadata": {"trial_days": str(data.trial_days)},
+            }
+            if data.max_redemptions:
+                promo_code_params["max_redemptions"] = data.max_redemptions
+            if expires_at:
+                promo_code_params["expires_at"] = int(expires_at.timestamp())
+
+            stripe_promo = stripe.PromotionCode.create(**promo_code_params)
+            stripe_promo_id = stripe_promo.id
+            logger.info(f"Created Stripe promo {stripe_promo_id} for {code}")
+        except Exception as e:
+            logger.warning(f"Failed to create Stripe promotion code for {code}: {e}")
 
     promo = PromoCode(
         code=code,
