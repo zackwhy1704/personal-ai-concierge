@@ -371,6 +371,10 @@ class ApiClient {
     return this.request(`/api/promo/${id}/deactivate`, { method: 'PATCH' });
   }
 
+  async deletePromoCode(id: string) {
+    return this.request(`/api/promo/${id}`, { method: 'DELETE' });
+  }
+
   // Products
   async listProducts(category?: string) {
     const params = new URLSearchParams();

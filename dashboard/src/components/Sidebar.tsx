@@ -41,6 +41,7 @@ const adminNav: NavGroup[] = [
     label: 'Administration',
     items: [
       { href: '/dashboard', label: 'All Tenants' },
+      { href: '/dashboard/promo', label: 'Promo Codes' },
     ],
   },
 ]

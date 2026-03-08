@@ -39,11 +39,14 @@ async def _ensure_table(db: AsyncSession):
             )
         """))
         # Add new columns if table already existed without them
+        # Use savepoints so a failed ALTER doesn't abort the transaction
         for col, coltype in [("stripe_coupon_id", "VARCHAR(100)"), ("stripe_promo_id", "VARCHAR(100)")]:
             try:
+                await db.execute(text("SAVEPOINT alter_col"))
                 await db.execute(text(f"ALTER TABLE promo_codes ADD COLUMN {col} {coltype}"))
+                await db.execute(text("RELEASE SAVEPOINT alter_col"))
             except Exception:
-                pass
+                await db.execute(text("ROLLBACK TO SAVEPOINT alter_col"))
         await db.flush()
     except Exception:
         pass
@@ -189,6 +192,31 @@ async def deactivate_promo_code(
             logger.warning(f"Failed to deactivate Stripe promo {promo.stripe_promo_id}: {e}")
 
     return {"status": "deactivated", "code": promo.code}
+
+
+@router.delete("/{promo_id}")
+async def delete_promo_code(
+    promo_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: bool = Depends(verify_admin),
+):
+    """Delete a promo code (admin only). Also deactivates in Stripe."""
+    result = await db.execute(select(PromoCode).where(PromoCode.id == promo_id))
+    promo = result.scalar_one_or_none()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+
+    # Deactivate in Stripe first
+    if promo.stripe_promo_id:
+        try:
+            stripe.PromotionCode.modify(promo.stripe_promo_id, active=False)
+        except Exception as e:
+            logger.warning(f"Failed to deactivate Stripe promo {promo.stripe_promo_id}: {e}")
+
+    code = promo.code
+    await db.delete(promo)
+    await db.flush()
+    return {"status": "deleted", "code": code}
 
 
 # ── Public validation endpoint ───────────────
