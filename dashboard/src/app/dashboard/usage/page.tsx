@@ -9,6 +9,7 @@ interface Subscription {
   status: string
   current_period_end?: string | null
   cancel_at_period_end: boolean
+  trial_end?: string | null
 }
 
 interface Usage {
@@ -51,6 +52,9 @@ function UsageContent() {
   const [pricing, setPricing] = useState<PricingInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
+  const [promoCode, setPromoCode] = useState('')
+  const [promoResult, setPromoResult] = useState<{ valid: boolean; message: string; trial_days: number } | null>(null)
+  const [promoValidating, setPromoValidating] = useState(false)
   const searchParams = useSearchParams()
   const paymentStatus = searchParams.get('payment')
 
@@ -79,10 +83,24 @@ function UsageContent() {
     }
   }
 
+  async function handleValidatePromo() {
+    if (!promoCode.trim()) return
+    setPromoValidating(true)
+    try {
+      const result = await api.validatePromoCode(promoCode)
+      setPromoResult(result)
+    } catch {
+      setPromoResult({ valid: false, message: 'Failed to validate promo code', trial_days: 0 })
+    } finally {
+      setPromoValidating(false)
+    }
+  }
+
   async function handleSubscribe(plan: string) {
     setActionLoading(true)
     try {
-      const result = await api.createCheckout(plan)
+      const code = promoResult?.valid ? promoCode : undefined
+      const result = await api.createCheckout(plan, code)
       window.location.href = result.checkout_url
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to create checkout')
@@ -144,14 +162,20 @@ function UsageContent() {
                 <Row label="Status" value={
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                     subscription.status === 'active' ? 'bg-green-100 text-green-700' :
+                    subscription.status === 'trialing' ? 'bg-purple-100 text-purple-700' :
                     subscription.status === 'past_due' ? 'bg-yellow-100 text-yellow-700' :
                     subscription.status === 'canceled' || subscription.status === 'none' ? 'bg-red-100 text-red-700' :
                     'bg-gray-100 text-gray-700'
                   }`}>
-                    {subscription.status.toUpperCase()}
+                    {subscription.status === 'trialing' ? 'FREE TRIAL' : subscription.status.toUpperCase()}
                   </span>
                 } />
                 <Row label="Plan" value={<span className="capitalize">{subscription.plan}</span>} />
+                {subscription.trial_end && subscription.status === 'trialing' ? (
+                  <Row label="Trial Ends" value={
+                    <span className="text-purple-600 font-medium">{new Date(subscription.trial_end).toLocaleDateString()}</span>
+                  } />
+                ) : null}
                 {subscription.current_period_end ? (
                   <Row label="Current Period Ends" value={
                     <span>{new Date(subscription.current_period_end).toLocaleDateString()}</span>
@@ -186,15 +210,54 @@ function UsageContent() {
       {subscription && !subscription.has_subscription && plans.length > 0 && (
         <div className="mb-8">
           <h3 className="font-semibold text-gray-700 mb-4">Choose a Plan</h3>
+
+          {/* Promo Code Input */}
+          <div className="p-4 bg-gray-50 rounded-xl border mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Have a promo code?</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={promoCode}
+                onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null) }}
+                placeholder="Enter promo code"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={handleValidatePromo}
+                disabled={promoValidating || !promoCode.trim()}
+                className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-900 disabled:opacity-50"
+              >
+                {promoValidating ? 'Checking...' : 'Apply'}
+              </button>
+            </div>
+            {promoResult && (
+              <p className={`text-sm mt-2 ${promoResult.valid ? 'text-green-600' : 'text-red-600'}`}>
+                {promoResult.message}
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-3 gap-4">
             {plans.map(plan => (
-              <div key={plan.id} className="p-6 bg-white rounded-xl shadow-sm border text-center">
+              <div key={plan.id} className={`p-6 bg-white rounded-xl shadow-sm border text-center ${promoResult?.valid ? 'ring-2 ring-purple-300' : ''}`}>
                 <h4 className="font-bold text-lg">{plan.name}</h4>
-                <p className="text-3xl font-bold text-gray-800 mt-2">{sym}{plan.price.toLocaleString()}<span className="text-sm text-gray-400">/mo</span></p>
+                {promoResult?.valid ? (
+                  <>
+                    <p className="text-3xl font-bold text-purple-600 mt-2">{sym}0<span className="text-sm text-gray-400">/{promoResult.trial_days} days</span></p>
+                    <p className="text-xs text-gray-400 line-through">{sym}{plan.price.toLocaleString()}/mo</p>
+                    <p className="text-xs text-purple-600 font-medium mt-1">Then {sym}{plan.price.toLocaleString()}/mo after trial</p>
+                  </>
+                ) : (
+                  <p className="text-3xl font-bold text-gray-800 mt-2">{sym}{plan.price.toLocaleString()}<span className="text-sm text-gray-400">/mo</span></p>
+                )}
                 <p className="text-xs text-gray-500 mt-2">{plan.conversations.toLocaleString()} conversations included</p>
                 <button onClick={() => handleSubscribe(plan.id)} disabled={actionLoading}
-                  className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-                  Subscribe
+                  className={`mt-4 w-full px-4 py-2 text-white rounded-lg text-sm disabled:opacity-50 ${
+                    promoResult?.valid
+                      ? 'bg-purple-600 hover:bg-purple-700'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}>
+                  {promoResult?.valid ? 'Start Free Trial' : 'Subscribe'}
                 </button>
               </div>
             ))}

@@ -7,6 +7,7 @@ from app.models.knowledge import KnowledgeDocument, KnowledgeChunk
 from app.models.product import Product, ProductStatus
 from app.models.upsell import UpsellStrategy, UpsellAttempt, UpsellTriggerType, UpsellOutcome
 from app.models.sales_analytics import SalesMetricDaily
+from app.models.promo_code import PromoCode
 
 __all__ = [
     "Tenant",
@@ -24,4 +25,5 @@ __all__ = [
     "UpsellTriggerType",
     "UpsellOutcome",
     "SalesMetricDaily",
+    "PromoCode",
 ]

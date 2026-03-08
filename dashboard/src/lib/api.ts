@@ -329,14 +329,16 @@ class ApiClient {
     return this.request('/api/billing/subscription');
   }
 
-  async createCheckout(plan: string) {
+  async createCheckout(plan: string, promoCode?: string) {
+    const payload: Record<string, string> = {
+      plan,
+      success_url: `${window.location.origin}/dashboard/usage?payment=success`,
+      cancel_url: `${window.location.origin}/dashboard/usage?payment=cancelled`,
+    };
+    if (promoCode) payload.promo_code = promoCode;
     return this.request<{ checkout_url: string; session_id: string }>('/api/billing/checkout', {
       method: 'POST',
-      body: JSON.stringify({
-        plan,
-        success_url: `${window.location.origin}/dashboard/usage?payment=success`,
-        cancel_url: `${window.location.origin}/dashboard/usage?payment=cancelled`,
-      }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -350,6 +352,25 @@ class ApiClient {
 
   async getPricing(currency: string = 'MYR') {
     return this.request(`/api/billing/pricing?currency=${currency}`);
+  }
+
+  // Promo Codes
+  async validatePromoCode(code: string) {
+    return this.request<{ valid: boolean; code: string; trial_days: number; message: string }>(
+      '/api/promo/validate', { method: 'POST', body: JSON.stringify({ code }) }
+    );
+  }
+
+  async listPromoCodes() {
+    return this.request<Array<Record<string, unknown>>>('/api/promo');
+  }
+
+  async createPromoCode(data: Record<string, unknown>) {
+    return this.request('/api/promo', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async deactivatePromoCode(id: string) {
+    return this.request(`/api/promo/${id}/deactivate`, { method: 'PATCH' });
   }
 
   // Products

@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.db.database import init_db
 from app.services.vector_store import VectorStoreService
 from app.api import webhooks, tenants, guardrails, usage, intents, knowledge, billing, auth
-from app.api import products, upsell_strategies, sales_analytics
+from app.api import products, upsell_strategies, sales_analytics, promo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,6 +70,7 @@ app.include_router(billing.router)
 app.include_router(products.router)
 app.include_router(upsell_strategies.router)
 app.include_router(sales_analytics.router)
+app.include_router(promo.router)
 
 
 @app.get("/health")

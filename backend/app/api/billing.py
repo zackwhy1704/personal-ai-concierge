@@ -59,6 +59,7 @@ whatsapp = WhatsAppService()
 
 class CheckoutRequest(BaseModel):
     plan: str  # "starter", "professional", "enterprise"
+    promo_code: Optional[str] = None
     success_url: str = "https://concierge.yourdomain.com/dashboard?payment=success"
     cancel_url: str = "https://concierge.yourdomain.com/dashboard?payment=cancelled"
 
@@ -83,6 +84,19 @@ async def create_checkout_session(
     if not price_id:
         raise HTTPException(status_code=400, detail=f"No Stripe price configured for {tenant.currency} {data.plan}")
 
+    # Validate promo code if provided
+    trial_days = 0
+    if data.promo_code:
+        from app.models.promo_code import PromoCode
+        code = data.promo_code.strip().upper()
+        result = await db.execute(select(PromoCode).where(PromoCode.code == code))
+        promo = result.scalar_one_or_none()
+        if not promo or not promo.is_valid():
+            raise HTTPException(status_code=400, detail="Invalid or expired promo code")
+        trial_days = promo.trial_days
+        promo.times_redeemed += 1
+        await db.flush()
+
     # Create or reuse Stripe customer
     if not tenant.stripe_customer_id:
         customer = stripe.Customer.create(
@@ -92,18 +106,27 @@ async def create_checkout_session(
         tenant.stripe_customer_id = customer.id
         await db.flush()
 
-    session = stripe.checkout.Session.create(
-        customer=tenant.stripe_customer_id,
-        payment_method_types=["card"],
-        line_items=[{"price": price_id, "quantity": 1}],
-        mode="subscription",
-        success_url=data.success_url,
-        cancel_url=data.cancel_url,
-        metadata={"tenant_id": str(tenant.id), "plan": plan.value},
-        subscription_data={
-            "metadata": {"tenant_id": str(tenant.id), "plan": plan.value},
-        },
-    )
+    subscription_data = {
+        "metadata": {"tenant_id": str(tenant.id), "plan": plan.value},
+    }
+    if trial_days > 0:
+        subscription_data["trial_period_days"] = trial_days
+
+    session_params = {
+        "customer": tenant.stripe_customer_id,
+        "payment_method_types": ["card"],
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "mode": "subscription",
+        "success_url": data.success_url,
+        "cancel_url": data.cancel_url,
+        "metadata": {"tenant_id": str(tenant.id), "plan": plan.value},
+        "subscription_data": subscription_data,
+    }
+    # Collect payment method upfront for trial (charged after trial ends)
+    if trial_days > 0:
+        session_params["payment_method_collection"] = "always"
+
+    session = stripe.checkout.Session.create(**session_params)
 
     return CheckoutResponse(checkout_url=session.url, session_id=session.id)
 
@@ -118,6 +141,7 @@ class SubscriptionStatusResponse(BaseModel):
     status: str  # active, past_due, canceled, paused, trialing, unpaid
     current_period_end: Optional[str] = None
     cancel_at_period_end: bool = False
+    trial_end: Optional[str] = None
     stripe_customer_id: Optional[str] = None
 
 
@@ -136,12 +160,16 @@ async def get_subscription_status(
 
     try:
         sub = stripe.Subscription.retrieve(tenant.stripe_subscription_id)
+        trial_end = None
+        if sub.trial_end:
+            trial_end = datetime.fromtimestamp(sub.trial_end).isoformat()
         return SubscriptionStatusResponse(
             has_subscription=True,
             plan=tenant.plan.value,
             status=sub.status,
             current_period_end=datetime.fromtimestamp(sub.current_period_end).isoformat(),
             cancel_at_period_end=sub.cancel_at_period_end,
+            trial_end=trial_end,
             stripe_customer_id=tenant.stripe_customer_id,
         )
     except stripe.error.InvalidRequestError:
@@ -268,16 +296,38 @@ async def _handle_checkout_completed(session: dict):
 
         await db.commit()
 
+        # Check if this is a trial subscription
+        is_trial = False
+        trial_end_date = ""
+        if subscription_id:
+            try:
+                sub = stripe.Subscription.retrieve(subscription_id)
+                if sub.status == "trialing" and sub.trial_end:
+                    is_trial = True
+                    trial_end_date = datetime.fromtimestamp(sub.trial_end).strftime("%B %d, %Y")
+            except Exception:
+                pass
+
         # Notify admin via WhatsApp
         sym = get_currency_symbol(tenant.currency)
         plan_price = get_plan_price(tenant.currency, plan_str)
-        await _notify_admin(
-            tenant,
-            f"Payment successful! Your {plan_str.title()} plan "
-            f"({sym}{plan_price:,}/mo) is now active.\n\n"
-            f"Subscription ID: {subscription_id}\n"
-            f"You're all set to start using AI Concierge!",
-        )
+        if is_trial:
+            await _notify_admin(
+                tenant,
+                f"Free trial activated! Your {plan_str.title()} plan "
+                f"({sym}{plan_price:,}/mo) is now active.\n\n"
+                f"Trial ends: {trial_end_date}\n"
+                f"No charges until your trial ends.\n"
+                f"You're all set to start using AI Concierge!",
+            )
+        else:
+            await _notify_admin(
+                tenant,
+                f"Payment successful! Your {plan_str.title()} plan "
+                f"({sym}{plan_price:,}/mo) is now active.\n\n"
+                f"Subscription ID: {subscription_id}\n"
+                f"You're all set to start using AI Concierge!",
+            )
 
     logger.info(f"Checkout completed for tenant {tenant_id}, plan={plan_str}")
 
