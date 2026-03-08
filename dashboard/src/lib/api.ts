@@ -329,16 +329,14 @@ class ApiClient {
     return this.request('/api/billing/subscription');
   }
 
-  async createCheckout(plan: string, promoCode?: string) {
-    const payload: Record<string, string> = {
-      plan,
-      success_url: `${window.location.origin}/dashboard/usage?payment=success`,
-      cancel_url: `${window.location.origin}/dashboard/usage?payment=cancelled`,
-    };
-    if (promoCode) payload.promo_code = promoCode;
+  async createCheckout(plan: string) {
     return this.request<{ checkout_url: string; session_id: string }>('/api/billing/checkout', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        plan,
+        success_url: `${window.location.origin}/dashboard/usage?payment=success`,
+        cancel_url: `${window.location.origin}/dashboard/usage?payment=cancelled`,
+      }),
     });
   }
 

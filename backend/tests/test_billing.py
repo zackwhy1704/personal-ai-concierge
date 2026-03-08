@@ -174,6 +174,13 @@ async def test_webhook_checkout_completed(client, test_tenant, db_session):
 
         mock_stripe.Webhook.construct_event.return_value = event
 
+        # Mock subscription with no discount/trial (normal payment)
+        mock_sub = MagicMock()
+        mock_sub.discount = None
+        mock_sub.status = "active"
+        mock_sub.trial_end = None
+        mock_stripe.Subscription.retrieve.return_value = mock_sub
+
         # Mock the DB session used inside the handler
         mock_session = AsyncMock()
         mock_result = MagicMock()

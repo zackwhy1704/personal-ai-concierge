@@ -59,7 +59,6 @@ whatsapp = WhatsAppService()
 
 class CheckoutRequest(BaseModel):
     plan: str  # "starter", "professional", "enterprise"
-    promo_code: Optional[str] = None
     success_url: str = "https://concierge.yourdomain.com/dashboard?payment=success"
     cancel_url: str = "https://concierge.yourdomain.com/dashboard?payment=cancelled"
 
@@ -84,19 +83,6 @@ async def create_checkout_session(
     if not price_id:
         raise HTTPException(status_code=400, detail=f"No Stripe price configured for {tenant.currency} {data.plan}")
 
-    # Validate promo code if provided
-    trial_days = 0
-    if data.promo_code:
-        from app.models.promo_code import PromoCode
-        code = data.promo_code.strip().upper()
-        result = await db.execute(select(PromoCode).where(PromoCode.code == code))
-        promo = result.scalar_one_or_none()
-        if not promo or not promo.is_valid():
-            raise HTTPException(status_code=400, detail="Invalid or expired promo code")
-        trial_days = promo.trial_days
-        promo.times_redeemed += 1
-        await db.flush()
-
     # Create or reuse Stripe customer
     if not tenant.stripe_customer_id:
         customer = stripe.Customer.create(
@@ -106,27 +92,19 @@ async def create_checkout_session(
         tenant.stripe_customer_id = customer.id
         await db.flush()
 
-    subscription_data = {
-        "metadata": {"tenant_id": str(tenant.id), "plan": plan.value},
-    }
-    if trial_days > 0:
-        subscription_data["trial_period_days"] = trial_days
-
-    session_params = {
-        "customer": tenant.stripe_customer_id,
-        "payment_method_types": ["card"],
-        "line_items": [{"price": price_id, "quantity": 1}],
-        "mode": "subscription",
-        "success_url": data.success_url,
-        "cancel_url": data.cancel_url,
-        "metadata": {"tenant_id": str(tenant.id), "plan": plan.value},
-        "subscription_data": subscription_data,
-    }
-    # Collect payment method upfront for trial (charged after trial ends)
-    if trial_days > 0:
-        session_params["payment_method_collection"] = "always"
-
-    session = stripe.checkout.Session.create(**session_params)
+    session = stripe.checkout.Session.create(
+        customer=tenant.stripe_customer_id,
+        payment_method_types=["card"],
+        line_items=[{"price": price_id, "quantity": 1}],
+        mode="subscription",
+        success_url=data.success_url,
+        cancel_url=data.cancel_url,
+        allow_promotion_codes=True,
+        metadata={"tenant_id": str(tenant.id), "plan": plan.value},
+        subscription_data={
+            "metadata": {"tenant_id": str(tenant.id), "plan": plan.value},
+        },
+    )
 
     return CheckoutResponse(checkout_url=session.url, session_id=session.id)
 
@@ -296,15 +274,38 @@ async def _handle_checkout_completed(session: dict):
 
         await db.commit()
 
-        # Check if this is a trial subscription
+        # Check if this is a promo/trial subscription
         is_trial = False
         trial_end_date = ""
+        discount_code = None
         if subscription_id:
             try:
                 sub = stripe.Subscription.retrieve(subscription_id)
+                # Detect trial from Stripe coupon applied via promotion code
+                if sub.discount and sub.discount.coupon:
+                    discount_code = sub.discount.promotion_code
+                    is_trial = True
+                    # Use current_period_end as the "free" period end
+                    if sub.current_period_end:
+                        trial_end_date = datetime.fromtimestamp(sub.current_period_end).strftime("%B %d, %Y")
+                # Also detect native Stripe trial
                 if sub.status == "trialing" and sub.trial_end:
                     is_trial = True
                     trial_end_date = datetime.fromtimestamp(sub.trial_end).strftime("%B %d, %Y")
+            except Exception:
+                pass
+
+        # Track promo redemption in our DB
+        if discount_code:
+            try:
+                from app.models.promo_code import PromoCode
+                promo_result = await db.execute(
+                    select(PromoCode).where(PromoCode.stripe_promo_id == discount_code)
+                )
+                promo = promo_result.scalar_one_or_none()
+                if promo:
+                    promo.times_redeemed += 1
+                    await db.commit()
             except Exception:
                 pass
 
@@ -316,8 +317,8 @@ async def _handle_checkout_completed(session: dict):
                 tenant,
                 f"Free trial activated! Your {plan_str.title()} plan "
                 f"({sym}{plan_price:,}/mo) is now active.\n\n"
-                f"Trial ends: {trial_end_date}\n"
-                f"No charges until your trial ends.\n"
+                f"First month free — trial ends: {trial_end_date}\n"
+                f"Your card will be charged after the trial.\n"
                 f"You're all set to start using AI Concierge!",
             )
         else:

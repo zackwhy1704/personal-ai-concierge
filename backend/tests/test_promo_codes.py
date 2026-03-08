@@ -1,4 +1,4 @@
-"""Tests for promo code system — create, validate, checkout with trial."""
+"""Tests for promo code system — create, validate, Stripe-native promo codes."""
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -103,34 +103,6 @@ async def test_validate_deactivated_promo(client):
 
 
 @pytest.mark.asyncio
-async def test_validate_maxed_out_promo(client):
-    """Promo code at max redemptions is not valid."""
-    await client.post("/api/promo", json={
-        "code": "MAXED",
-        "max_redemptions": 1,
-    })
-
-    # Use it once via checkout mock
-    mock_session = MagicMock()
-    mock_session.id = "sess_123"
-    mock_session.url = "https://checkout.stripe.com/test"
-
-    with patch("app.api.billing.stripe.Customer.create", return_value=MagicMock(id="cus_test")):
-        with patch("app.api.billing.stripe.checkout.Session.create", return_value=mock_session):
-            with patch("app.api.billing.get_stripe_price_id", return_value="price_test"):
-                await client.post("/api/billing/checkout", json={
-                    "plan": "starter",
-                    "promo_code": "MAXED",
-                })
-
-    # Now it should be maxed out
-    response = await client.post("/api/promo/validate", json={"code": "MAXED"})
-    data = response.json()
-    assert data["valid"] is False
-    assert "redemption limit" in data["message"]
-
-
-@pytest.mark.asyncio
 async def test_validate_empty_code(client):
     """Empty promo code returns invalid."""
     response = await client.post("/api/promo/validate", json={"code": ""})
@@ -139,38 +111,27 @@ async def test_validate_empty_code(client):
 
 
 @pytest.mark.asyncio
-async def test_checkout_with_promo_code(client):
-    """Checkout with valid promo code applies trial_period_days."""
-    await client.post("/api/promo", json={
-        "code": "TRIAL30",
-        "trial_days": 30,
-    })
-
+async def test_checkout_creates_session_with_allow_promotion_codes(client):
+    """Checkout creates Stripe session with allow_promotion_codes=True."""
     mock_session = MagicMock()
-    mock_session.id = "sess_trial"
-    mock_session.url = "https://checkout.stripe.com/trial"
+    mock_session.id = "sess_promo"
+    mock_session.url = "https://checkout.stripe.com/promo"
 
-    with patch("app.api.billing.stripe.Customer.create", return_value=MagicMock(id="cus_trial")):
+    with patch("app.api.billing.stripe.Customer.create", return_value=MagicMock(id="cus_promo")):
         with patch("app.api.billing.stripe.checkout.Session.create", return_value=mock_session) as mock_create:
             with patch("app.api.billing.get_stripe_price_id", return_value="price_test"):
                 response = await client.post("/api/billing/checkout", json={
                     "plan": "starter",
-                    "promo_code": "TRIAL30",
                 })
 
     assert response.status_code == 200
-    data = response.json()
-    assert data["session_id"] == "sess_trial"
-
-    # Verify trial_period_days was passed to Stripe
     call_kwargs = mock_create.call_args[1]
-    assert call_kwargs["subscription_data"]["trial_period_days"] == 30
-    assert call_kwargs["payment_method_collection"] == "always"
+    assert call_kwargs["allow_promotion_codes"] is True
 
 
 @pytest.mark.asyncio
-async def test_checkout_without_promo_code(client):
-    """Checkout without promo code has no trial."""
+async def test_checkout_without_promo_no_trial(client):
+    """Checkout without promo code has no trial period."""
     mock_session = MagicMock()
     mock_session.id = "sess_notrial"
     mock_session.url = "https://checkout.stripe.com/notrial"
@@ -184,20 +145,7 @@ async def test_checkout_without_promo_code(client):
 
     assert response.status_code == 200
     call_kwargs = mock_create.call_args[1]
-    assert "trial_period_days" not in call_kwargs["subscription_data"]
-    assert "payment_method_collection" not in call_kwargs
-
-
-@pytest.mark.asyncio
-async def test_checkout_with_invalid_promo(client):
-    """Checkout with invalid promo code fails."""
-    with patch("app.api.billing.get_stripe_price_id", return_value="price_test"):
-        response = await client.post("/api/billing/checkout", json={
-            "plan": "starter",
-            "promo_code": "NOTEXIST",
-        })
-    assert response.status_code == 400
-    assert "Invalid or expired" in response.json()["detail"]
+    assert "trial_period_days" not in call_kwargs.get("subscription_data", {})
 
 
 @pytest.mark.asyncio
@@ -205,7 +153,7 @@ async def test_checkout_trial_notification(client):
     """Checkout completed with trial sends trial-specific notification."""
     mock_sub = MagicMock()
     mock_sub.status = "trialing"
-    mock_sub.trial_end = 1712000000  # some timestamp
+    mock_sub.trial_end = 1712000000
 
     with patch("app.api.billing.stripe.Subscription.retrieve", return_value=mock_sub):
         with patch("app.api.billing._notify_admin") as mock_notify:
@@ -219,32 +167,6 @@ async def test_checkout_trial_notification(client):
             if mock_notify.called:
                 msg = mock_notify.call_args[0][1]
                 assert "Free trial activated" in msg or "trial" in msg.lower()
-
-
-@pytest.mark.asyncio
-async def test_promo_redemption_count_increments(client):
-    """Promo code redemption count increases on checkout."""
-    await client.post("/api/promo", json={
-        "code": "COUNT1",
-        "trial_days": 7,
-    })
-
-    mock_session = MagicMock()
-    mock_session.id = "sess_count"
-    mock_session.url = "https://checkout.stripe.com/count"
-
-    with patch("app.api.billing.stripe.Customer.create", return_value=MagicMock(id="cus_count")):
-        with patch("app.api.billing.stripe.checkout.Session.create", return_value=mock_session):
-            with patch("app.api.billing.get_stripe_price_id", return_value="price_test"):
-                await client.post("/api/billing/checkout", json={
-                    "plan": "starter",
-                    "promo_code": "COUNT1",
-                })
-
-    # Check redemption count
-    promos = (await client.get("/api/promo")).json()
-    count_promo = [p for p in promos if p["code"] == "COUNT1"][0]
-    assert count_promo["times_redeemed"] == 1
 
 
 @pytest.mark.asyncio

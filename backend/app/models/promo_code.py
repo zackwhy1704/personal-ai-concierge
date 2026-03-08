@@ -18,6 +18,8 @@ class PromoCode(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     expires_at = Column(DateTime, nullable=True)  # None = never expires
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    stripe_coupon_id = Column(String(100), nullable=True)
+    stripe_promo_id = Column(String(100), nullable=True)
 
     def is_valid(self) -> bool:
         """Check if promo code can be redeemed."""
