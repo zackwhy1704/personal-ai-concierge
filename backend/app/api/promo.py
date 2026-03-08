@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
@@ -13,6 +13,27 @@ from app.api.auth import verify_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/promo", tags=["promo"])
+
+
+async def _ensure_table(db: AsyncSession):
+    """Ensure promo_codes table exists (safe to call multiple times)."""
+    try:
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS promo_codes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                code VARCHAR(50) UNIQUE NOT NULL,
+                description VARCHAR(255),
+                trial_days INTEGER NOT NULL DEFAULT 30,
+                max_redemptions INTEGER,
+                times_redeemed INTEGER NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                expires_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """))
+        await db.flush()
+    except Exception:
+        pass
 
 
 # ── Schemas ──────────────────────────────────
@@ -53,6 +74,7 @@ async def create_promo_code(
     _admin: bool = Depends(verify_admin),
 ):
     """Create a new promo code (admin only)."""
+    await _ensure_table(db)
     code = data.code.strip().upper()
     if not code:
         raise HTTPException(status_code=400, detail="Code cannot be empty")
@@ -87,6 +109,7 @@ async def list_promo_codes(
     _admin: bool = Depends(verify_admin),
 ):
     """List all promo codes (admin only)."""
+    await _ensure_table(db)
     result = await db.execute(select(PromoCode).order_by(PromoCode.created_at.desc()))
     return [_to_response(p) for p in result.scalars().all()]
 
@@ -116,6 +139,7 @@ async def validate_promo_code(
     db: AsyncSession = Depends(get_db),
 ):
     """Validate a promo code. No auth required — just checks validity."""
+    await _ensure_table(db)
     code = (data.get("code") or "").strip().upper()
     if not code:
         return PromoValidationResponse(
