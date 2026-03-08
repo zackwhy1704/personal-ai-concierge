@@ -58,3 +58,21 @@ async def init_db():
             ))
         except Exception:
             pass  # column already exists
+
+        # Create promo_codes table if not exists (promo code free trial)
+        try:
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS promo_codes (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    code VARCHAR(50) UNIQUE NOT NULL,
+                    description VARCHAR(255),
+                    trial_days INTEGER NOT NULL DEFAULT 30,
+                    max_redemptions INTEGER,
+                    times_redeemed INTEGER NOT NULL DEFAULT 0,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    expires_at TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            """))
+        except Exception:
+            pass  # table already exists
